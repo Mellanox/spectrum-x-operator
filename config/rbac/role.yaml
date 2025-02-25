@@ -1,9 +1,7 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/name: spectrum-x-operator
-    app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:
 - apiGroups:
@@ -36,32 +34,6 @@ rules:
   - ""
   resources:
   - pods/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - spectrumx.nvidia.com
-  resources:
-  - spectrumxconfigs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spectrumx.nvidia.com
-  resources:
-  - spectrumxconfigs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - spectrumx.nvidia.com
-  resources:
-  - spectrumxconfigs/status
   verbs:
   - get
   - patch

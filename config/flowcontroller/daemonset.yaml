@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: flowcontroller
+  namespace: system
+  labels:
+    control-plane: flowcontroller
+    app.kubernetes.io/name: spectrum-x-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      control-plane: flowcontroller
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: flowcontroller
+      labels:
+        control-plane: flowcontroller
+    spec:
+      securityContext:
+        runAsNonRoot: False
+      containers:
+      - command:
+        - /flowcontroller
+        args:
+        image: controller:latest
+        name: flowcontroller
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+          runAsUser: 0
+          runAsGroup: 0
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+        - name: sys
+          mountPath: /sys
+        - name: ovs
+          mountPath: /var/run/openvswitch/
+        - name: ovs-systemd-config
+          mountPath: /etc/default/openvswitch-switch
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: ovs
+        hostPath:
+          path: /var/run/openvswitch
+      - name: ovs-systemd-config
+        hostPath:
+          path: /etc/default/openvswitch-switch
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
