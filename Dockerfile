@@ -22,9 +22,14 @@ COPY ./ ./
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
 
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM ubuntu:24.04
+
+RUN apt update && apt install -y \
+    openvswitch-common \
+    openvswitch-switch \
+    iproute2 \
+    iputils-arping
+
 WORKDIR /
 COPY --from=builder /workspace/build/manager .
 COPY --from=builder /workspace/build/flowcontroller .
