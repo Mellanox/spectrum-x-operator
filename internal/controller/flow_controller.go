@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
-	"github.com/Mellanox/spectrum-x-operator/pkg/topology"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -71,8 +71,9 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	}
 
 	networkStatus := []netdefv1.NetworkStatus{}
+	// no need to retry in case of error, it will be reconciled again if someone fix the annotation
 	if err := json.Unmarshal([]byte(pod.Annotations[netdefv1.NetworkStatusAnnot]), &networkStatus); err != nil {
-		logr.Error(err, "failed to unmarshal netwokr status")
+		logr.Error(err, "failed to unmarshal network status")
 		return ctrl.Result{}, nil
 	}
 
@@ -90,7 +91,13 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 	logr.Info(fmt.Sprintf("pod network status: %+v", relevantNetworkStatus))
 
-	hostConfig, err := r.getHostConfig(ctx)
+	cfg, err := r.getConfig(ctx)
+	if err != nil {
+		logr.Error(err, "failed to get network config")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	hostConfig, err := r.getHostConfig(cfg)
 	if err != nil {
 		logr.Error(err, "failed to get host network config")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
@@ -101,7 +108,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	result := ctrl.Result{}
 
 	for _, rail := range hostConfig.Rails {
-		bridge, err := r.getBridgeToRail(rail)
+		bridge, err := r.getBridgeToRail(&rail, cfg)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get bridge for rail %s", rail))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
@@ -130,8 +137,8 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 		logr.Info(fmt.Sprintf("Found interface [%s] from bridge [%s] for rail [%s]", iface, bridge, rail))
 
-		if err = r.handleRailFlows(ctx, &rail, ns, bridge, iface); err != nil {
-			logr.Error(err, fmt.Sprintf("failed to add flows to rel [%s]", rail))
+		if err = r.handleRailFlows(ctx, &rail, cfg, ns, bridge, iface); err != nil {
+			logr.Error(err, fmt.Sprintf("failed to add flows to rail [%s]", rail))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
 			continue
 		}
@@ -140,25 +147,26 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	return result, nil
 }
 
-func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *topology.Rail, ns *netdefv1.NetworkStatus, bridge, iface string) error {
+func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
 	// remove all flows (mainly to remove the default normal action flows)
 	_, err := r.Exec.Execute(fmt.Sprintf("ovs-ofctl del-flows %s", bridge))
 	if err != nil {
 		return fmt.Errorf("failed to delete flows for bridge %s: %v", bridge, err)
 	}
 
-	pf, err := r.getPfForBridge(bridge)
+	pf, err := r.getRailDevice(rail.Name, cfg)
 	if err != nil {
 		return err
 	}
 
 	// add arp handling flows
-	if err = r.addArpFlows(bridge, pf, rail); err != nil {
+	// TODO: move local flows to a separate controller
+	if err = r.addArpFlows(bridge, pf); err != nil {
 		return fmt.Errorf("failed to add arp flows to bridge %s: %v", bridge, err)
 	}
 
 	if err := r.addRailFlows(ctx, bridge, pf, iface, rail, ns); err != nil {
-		return fmt.Errorf("failed to add flows to rel [%s]: %v", rail, err)
+		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}
 	return nil
 }
@@ -185,86 +193,84 @@ func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.Net
 	return "", nil, nil
 }
 
-func (r *FlowReconciler) getPfForBridge(bridge string) (string, error) {
-	ports, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl list-ports %s", bridge))
+func (r *FlowReconciler) addArpFlows(bridge string, pf string) error {
+	localIP, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}' | cut -d'/' -f1`,
+		bridge))
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	portsArr := strings.Split(ports, "\n")
-
-	for _, port := range portsArr {
-		// if it's not a representor it is a pf
-		cmd := fmt.Sprintf("ovs-appctl dpctl/show | grep %s | grep -v representor | awk '{print $3}'", port)
-		p, err := r.Exec.Execute(cmd)
-		if err != nil {
-			return "", err
-		}
-		if p != "" {
-			return port, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to find pf for bridge %s", bridge)
-}
-
-func (r *FlowReconciler) addArpFlows(bridge string, pf string, rail *topology.Rail) error {
 	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_tpa=3.0.0.2,actions=output:local"
 	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_spa=3.0.0.2,actions=output:eth2"
 	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_tpa=%s,actions=output:local"`,
-		bridge, rail.Local)
+		bridge, localIP)
 	if _, err := r.Exec.Execute(flow); err != nil {
-		return err
+		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
 	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_spa=%s,actions=output:%s"`,
-		bridge, rail.Local, pf)
+		bridge, localIP, pf)
 	if _, err := r.Exec.Execute(flow); err != nil {
-		return err
+		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
 	return nil
 }
 
-func (r *FlowReconciler) getBridgeToRail(rail topology.Rail) (string, error) {
-	// ip -o -4 addr show | grep "2.0.0.2" | awk '{print $2}'
-	cmd := fmt.Sprintf("ip -o -4 addr show | grep '%s' | awk '{print $2}'", rail.Local)
-	bridge, err := r.Exec.ExecutePrivileged(cmd)
-	if err != nil {
-		return "", fmt.Errorf("failed to get bridge to rail %s: %s", rail.Local, err)
+func (r *FlowReconciler) getRailDevice(railName string, cfg *config.Config) (string, error) {
+	railDevice := ""
+	for _, mapping := range cfg.RailDeviceMapping {
+		if mapping.RailName == railName {
+			railDevice = mapping.DevName
+			break
+		}
 	}
 
-	if bridge == "" {
-		return "", fmt.Errorf("failed to find bridge for rail %s", rail.Local)
+	if railDevice == "" {
+		return "", fmt.Errorf("failed to find device for rail %s", railName)
+	}
+
+	return railDevice, nil
+}
+
+func (r *FlowReconciler) getBridgeToRail(rail *config.HostRail, cfg *config.Config) (string, error) {
+	railDevice, err := r.getRailDevice(rail.Name, cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to get rail device for rail %s: %s", rail.Name, err)
+	}
+
+	bridge, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", railDevice))
+	if err != nil {
+		return "", fmt.Errorf("failed to get bridge to rail %s, device %s: %s", rail.Name, railDevice, err)
 	}
 
 	return bridge, nil
 }
 
-func (r *FlowReconciler) getTorMac(ctx context.Context, rail *topology.Rail) (string, error) {
+func (r *FlowReconciler) getTorMac(ctx context.Context, rail *config.HostRail) (string, error) {
 	logr := log.FromContext(ctx)
 	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
 	// nsenter --target 1 --net -- ip neighbor | grep 2.0.0.3 | awk '{print $5}'
 	// TODO: check why it always return an error
-	_, _ = r.Exec.ExecutePrivileged(fmt.Sprintf("arping %s -c 1", rail.Tor))
+	_, _ = r.Exec.ExecutePrivileged(fmt.Sprintf("arping %s -c 1", rail.PeerLeafPortIP))
 	// if err != nil {
 	// 	logr.Error(err, fmt.Sprintf("failed to exec: arping %s -c 1", rail.Tor))
 	// 	return "", err
 	// }
 
-	mac, err := r.Exec.ExecutePrivileged(fmt.Sprintf("ip neighbor | grep %s | awk '{print $5}'", rail.Tor))
+	mac, err := r.Exec.ExecutePrivileged(fmt.Sprintf("ip neighbor | grep %s | awk '{print $5}'", rail.PeerLeafPortIP))
 	if err != nil {
-		logr.Error(err, fmt.Sprintf("failed to exec: ip neighbor | grep %s | awk '{print $5}'", rail.Tor))
+		logr.Error(err, fmt.Sprintf("failed to exec: ip neighbor | grep %s | awk '{print $5}'", rail.PeerLeafPortIP))
 		return "", err
 	}
 	if mac == "" {
-		return "", fmt.Errorf("mac is empty for TOR %s", rail.Tor)
+		return "", fmt.Errorf("mac is empty for TOR %s", rail.PeerLeafPortIP)
 	}
 
 	return mac, nil
 }
 
-func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface string, rail *topology.Rail, ns *netdefv1.NetworkStatus) error {
+func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface string, rail *config.HostRail, ns *netdefv1.NetworkStatus) error {
 	logr := log.FromContext(ctx)
 
 	torMAC, err := r.getTorMac(ctx, rail)
@@ -277,7 +283,7 @@ func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface 
 	cmd := fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s  "table=0, priority=100, arp,in_port=%s, `+
 		`arp_op=1 actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],mod_dl_src:%s, load:0x2->NXM_OF_ARP_OP[], `+
 		`move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],load:0x%s->NXM_NX_ARP_SHA[], `+
-		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],IN_PORT"`,
+		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],output:IN_PORT"`,
 		bridge, podIface, torMAC, strings.ReplaceAll(torMAC, ":", ""))
 	logr.Info(cmd)
 
@@ -289,7 +295,7 @@ func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface 
 	cmd = fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s  "table=0, priority=100, arp,in_port=%s, arp_tpa=%s, `+
 		`arp_op=1 actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],mod_dl_src:%s, load:0x2->NXM_OF_ARP_OP[], `+
 		`move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],load:0x%s->NXM_NX_ARP_SHA[], `+
-		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],IN_PORT"`,
+		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],output:IN_PORT"`,
 		bridge, pf, ns.IPs[0], ns.Mac, strings.ReplaceAll(ns.Mac, ":", ""))
 	logr.Info(cmd)
 
@@ -315,7 +321,7 @@ func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface 
 	return nil
 }
 
-func (r *FlowReconciler) getHostConfig(ctx context.Context) (*topology.Host, error) {
+func (r *FlowReconciler) getConfig(ctx context.Context) (*config.Config, error) {
 	cfgMap := &corev1.ConfigMap{}
 	logr := log.FromContext(ctx)
 	if err := r.Get(ctx, topologyConfigMap, cfgMap); err != nil {
@@ -323,17 +329,22 @@ func (r *FlowReconciler) getHostConfig(ctx context.Context) (*topology.Host, err
 		return nil, err
 	}
 
-	cfg, err := topology.LoadConfigMap(cfgMap.Data["topology"])
+	cfg, err := config.ParseConfig(cfgMap.Data["config"])
 	if err != nil {
 		return nil, err
 	}
 
-	host, ok := cfg[r.NodeName]
-	if !ok {
-		return nil, fmt.Errorf("missing [%s] host toplogy", r.NodeName)
+	return cfg, nil
+}
+
+func (r *FlowReconciler) getHostConfig(cfg *config.Config) (*config.Host, error) {
+	for _, host := range cfg.Hosts {
+		if host.HostID == r.NodeName {
+			return &host, nil
+		}
 	}
 
-	return &host, nil
+	return nil, fmt.Errorf("missing [%s] host toplogy", r.NodeName)
 }
 
 // SetupWithManager sets up the controller with the Manager.
