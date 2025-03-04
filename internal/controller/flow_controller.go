@@ -42,10 +42,10 @@ import (
 type FlowReconciler struct {
 	NodeName string
 	client.Client
-	Exec exec.API
+	Exec               exec.API
+	ConfigMapNamespace string
+	ConfigMapName      string
 }
-
-var topologyConfigMap = types.NamespacedName{Namespace: "spcx-cni-system", Name: "config"}
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
@@ -108,7 +108,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	result := ctrl.Result{}
 
 	for _, rail := range hostConfig.Rails {
-		bridge, err := r.getBridgeToRail(&rail, cfg)
+		bridge, err := getBridgeToRail(&rail, cfg, r.Exec)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get bridge for rail %s", rail))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
@@ -148,21 +148,9 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 }
 
 func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
-	// remove all flows (mainly to remove the default normal action flows)
-	_, err := r.Exec.Execute(fmt.Sprintf("ovs-ofctl del-flows %s", bridge))
-	if err != nil {
-		return fmt.Errorf("failed to delete flows for bridge %s: %v", bridge, err)
-	}
-
-	pf, err := r.getRailDevice(rail.Name, cfg)
+	pf, err := getRailDevice(rail.Name, cfg)
 	if err != nil {
 		return err
-	}
-
-	// add arp handling flows
-	// TODO: move local flows to a separate controller
-	if err = r.addArpFlows(bridge, pf); err != nil {
-		return fmt.Errorf("failed to add arp flows to bridge %s: %v", bridge, err)
 	}
 
 	if err := r.addRailFlows(ctx, bridge, pf, iface, rail, ns); err != nil {
@@ -193,31 +181,7 @@ func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.Net
 	return "", nil, nil
 }
 
-func (r *FlowReconciler) addArpFlows(bridge string, pf string) error {
-	localIP, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}' | cut -d'/' -f1`,
-		bridge))
-	if err != nil {
-		return err
-	}
-
-	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_tpa=3.0.0.2,actions=output:local"
-	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_spa=3.0.0.2,actions=output:eth2"
-	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_tpa=%s,actions=output:local"`,
-		bridge, localIP)
-	if _, err := r.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-	}
-
-	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_spa=%s,actions=output:%s"`,
-		bridge, localIP, pf)
-	if _, err := r.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-	}
-
-	return nil
-}
-
-func (r *FlowReconciler) getRailDevice(railName string, cfg *config.Config) (string, error) {
+func getRailDevice(railName string, cfg *config.Config) (string, error) {
 	railDevice := ""
 	for _, mapping := range cfg.RailDeviceMapping {
 		if mapping.RailName == railName {
@@ -233,13 +197,13 @@ func (r *FlowReconciler) getRailDevice(railName string, cfg *config.Config) (str
 	return railDevice, nil
 }
 
-func (r *FlowReconciler) getBridgeToRail(rail *config.HostRail, cfg *config.Config) (string, error) {
-	railDevice, err := r.getRailDevice(rail.Name, cfg)
+func getBridgeToRail(rail *config.HostRail, cfg *config.Config, exec exec.API) (string, error) {
+	railDevice, err := getRailDevice(rail.Name, cfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to get rail device for rail %s: %s", rail.Name, err)
 	}
 
-	bridge, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", railDevice))
+	bridge, err := exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", railDevice))
 	if err != nil {
 		return "", fmt.Errorf("failed to get bridge to rail %s, device %s: %s", rail.Name, railDevice, err)
 	}
@@ -324,7 +288,7 @@ func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface 
 func (r *FlowReconciler) getConfig(ctx context.Context) (*config.Config, error) {
 	cfgMap := &corev1.ConfigMap{}
 	logr := log.FromContext(ctx)
-	if err := r.Get(ctx, topologyConfigMap, cfgMap); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: r.ConfigMapNamespace, Name: r.ConfigMapName}, cfgMap); err != nil {
 		logr.Error(err, "failed to get network configmap")
 		return nil, err
 	}
@@ -412,8 +376,8 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				if !ok {
 					return false
 				}
-				return configMap.Name == topologyConfigMap.Name &&
-					configMap.Namespace == topologyConfigMap.Namespace
+				return configMap.Name == r.ConfigMapName &&
+					configMap.Namespace == r.ConfigMapNamespace
 			})),
 		).
 		Complete(

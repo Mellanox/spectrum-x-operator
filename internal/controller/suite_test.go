@@ -27,7 +27,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -95,13 +94,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	configNS := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: topologyConfigMap.Namespace,
-		},
-	}
-
-	Expect(k8sClient.Create(context.Background(), configNS)).Should(Succeed())
 	By("setting up and running the test reconciler")
 	testManager, err := ctrl.NewManager(cfg,
 		ctrl.Options{

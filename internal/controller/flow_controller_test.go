@@ -61,17 +61,19 @@ var _ = Describe("Pod Controller", func() {
 	}
 
 	BeforeEach(func() {
+		ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "test-ns-"}}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+
 		ctrl = gomock.NewController(GinkgoT())
 		execMock = exec.NewMockAPI(ctrl)
 
 		flowController = &FlowReconciler{
-			NodeName: "host1",
-			Client:   k8sClient,
-			Exec:     execMock,
+			NodeName:           "host1",
+			ConfigMapNamespace: ns.Name,
+			ConfigMapName:      "config",
+			Client:             k8sClient,
+			Exec:               execMock,
 		}
-
-		ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "test-ns-"}}
-		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 
 		// default pod config
 		pod = &corev1.Pod{
@@ -93,6 +95,7 @@ var _ = Describe("Pod Controller", func() {
 	})
 
 	AfterEach(func() {
+		ctrl.Finish()
 		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
 	})
 
