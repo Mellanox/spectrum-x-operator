@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
@@ -37,6 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+const flowCookie = 0x2
 
 // FlowReconciler reconciles a Pod object
 type FlowReconciler struct {
@@ -153,9 +154,42 @@ func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *config.HostR
 		return err
 	}
 
-	if err := r.addRailFlows(ctx, bridge, pf, iface, rail, ns); err != nil {
+	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0, arp,arp_tpa=${CONTAINER_IP} actions=output:${REP_PORT}"
+	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:%s"`,
+		bridge, defaultPriority, flowCookie, ns.IPs[0], iface)
+	if _, err := r.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}
+
+	bridgeMAC, err := r.Exec.ExecutePrivileged(fmt.Sprintf("ip -o link show dev %s | awk '{print $17}'", bridge))
+	if err != nil {
+		return fmt.Errorf("failed to get mac for rail [%s]: %v", rail, err)
+	}
+
+	torMAC, err := r.getTorMac(ctx, rail)
+	if err != nil {
+		return fmt.Errorf("failed to get tor mac for rail [%s]: %v", rail, err)
+	}
+
+	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0,ip,in_port=${REP_PORT},
+	// actions=mod_dl_src=${ROUTER_MAC}, mod_dl_dst=${ROUTER_NH_MAC},dec_ttl, output=${PF_PORT}"
+	// setting the priority to avoid conflicts with a more specific flows
+	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,in_port=%s,`+
+		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
+		bridge, defaultPriority/2, flowCookie, iface, bridgeMAC, torMAC, pf)
+	if _, err := r.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
+	}
+
+	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0,ip,nw_dst=${CONTAINER_IP},
+	// actions=mod_dl_src=${ROUTER_MAC},mod_dl_dst=${CONTAINER_MAC},dec_ttl, output=${REP_PORT}"
+	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,`+
+		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
+		bridge, defaultPriority, flowCookie, ns.IPs[0], bridgeMAC, ns.Mac, iface)
+	if _, err := r.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
+	}
+
 	return nil
 }
 
@@ -232,57 +266,6 @@ func (r *FlowReconciler) getTorMac(ctx context.Context, rail *config.HostRail) (
 	}
 
 	return mac, nil
-}
-
-func (r *FlowReconciler) addRailFlows(ctx context.Context, bridge, pf, podIface string, rail *config.HostRail, ns *netdefv1.NetworkStatus) error {
-	logr := log.FromContext(ctx)
-
-	torMAC, err := r.getTorMac(ctx, rail)
-	if err != nil {
-		logr.Error(err, fmt.Sprintf("failed to get tor mac for rail %s", rail))
-		return err
-	}
-
-	// every arp will point to tor
-	cmd := fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s  "table=0, priority=100, arp,in_port=%s, `+
-		`arp_op=1 actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],mod_dl_src:%s, load:0x2->NXM_OF_ARP_OP[], `+
-		`move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],load:0x%s->NXM_NX_ARP_SHA[], `+
-		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],output:IN_PORT"`,
-		bridge, podIface, torMAC, strings.ReplaceAll(torMAC, ":", ""))
-	logr.Info(cmd)
-
-	if _, err = r.Exec.Execute(cmd); err != nil {
-		return err
-	}
-
-	// arp reply to tor
-	cmd = fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s  "table=0, priority=100, arp,in_port=%s, arp_tpa=%s, `+
-		`arp_op=1 actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],mod_dl_src:%s, load:0x2->NXM_OF_ARP_OP[], `+
-		`move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],load:0x%s->NXM_NX_ARP_SHA[], `+
-		`move:NXM_OF_ARP_TPA[]->NXM_OF_ARP_SPA[],output:IN_PORT"`,
-		bridge, pf, ns.IPs[0], ns.Mac, strings.ReplaceAll(ns.Mac, ":", ""))
-	logr.Info(cmd)
-
-	if _, err = r.Exec.Execute(cmd); err != nil {
-		return err
-	}
-
-	cmd = fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s "table=0, priority=90, ip, in_port=%s, actions=output:%s"`,
-		bridge, podIface, pf)
-	logr.Info(cmd)
-	if _, err = r.Exec.Execute(cmd); err != nil {
-		return err
-	}
-
-	cmd = fmt.Sprintf(`ovs-ofctl add-flow -OOpenFlow13 %s "table=0, priority=90, ip, in_port=%s, `+
-		`nw_dst=%s, actions=mod_dl_dst:%s, output:%s"`,
-		bridge, pf, ns.IPs[0], ns.Mac, podIface)
-	logr.Info(cmd)
-	if _, err = r.Exec.Execute(cmd); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (r *FlowReconciler) getConfig(ctx context.Context) (*config.Config, error) {

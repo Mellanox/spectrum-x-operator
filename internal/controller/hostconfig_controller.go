@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
@@ -33,6 +34,11 @@ import (
 )
 
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+
+const (
+	hostConfigCookie = 0x1
+	defaultPriority  = 32768
+)
 
 type HostConfigReconciler struct {
 	client.Client
@@ -81,7 +87,7 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
-		if err := r.addArpFlows(bridge, pf); err != nil {
+		if err := r.addFlows(bridge, pf, rail); err != nil {
 			logr.Error(err, "failed to add arp flows", "rail", rail)
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
@@ -90,26 +96,62 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 	return ctrl.Result{}, nil
 }
 
-func (r *HostConfigReconciler) addArpFlows(bridge string, pf string) error {
-	// TODO: check if there are multiple ip addresses on the port, otherwise the function will fail
-	localIP, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}' | cut -d'/' -f1`,
+func (r *HostConfigReconciler) addFlows(bridge string, pf string, rail config.HostRail) error {
+	localIPs, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}' | cut -d'/' -f1`,
 		bridge))
 	if err != nil {
 		return err
 	}
 
-	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_tpa=3.0.0.2,actions=output:local"
-	// ovs-ofctl add-flow br-0000_08_00.0 "table=0,priority=100,arp,arp_spa=3.0.0.2,actions=output:eth2"
-	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_tpa=%s,actions=output:local"`,
-		bridge, localIP)
+	for _, localIP := range strings.Split(localIPs, "\n") {
+		if localIP == "" {
+			continue
+		}
+		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:local"`,
+			bridge, defaultPriority, hostConfigCookie, localIP)
+		if _, err := r.Exec.Execute(flow); err != nil {
+			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
+		}
+
+		flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,actions=output:local"`,
+			bridge, defaultPriority, hostConfigCookie, localIP)
+		if _, err := r.Exec.Execute(flow); err != nil {
+			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
+		}
+	}
+
+	// TOR is the gateway for the outer ip
+	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:%s"`,
+		bridge, defaultPriority, hostConfigCookie, rail.PeerLeafPortIP, pf)
 	if _, err := r.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
-	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=100,arp,arp_spa=%s,actions=output:%s"`,
-		bridge, localIP, pf)
-	if _, err := r.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
+	src, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip route get %s | grep dev | awk '{print $5}'`, rail.PeerLeafPortIP))
+	if err != nil {
+		return err
+	}
+
+	localIPs, err = r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}'`, bridge))
+	if err != nil {
+		return err
+	}
+
+	for _, localIP := range strings.Split(localIPs, "\n") {
+		if localIP == "" {
+			continue
+		}
+
+		if !strings.Contains(localIP, src) {
+			continue
+		}
+
+		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,`+
+			`ip,in_port=local,nw_dst=%s,actions=output:%s"`,
+			bridge, defaultPriority, hostConfigCookie, localIP, pf)
+		if _, err := r.Exec.Execute(flow); err != nil {
+			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
+		}
 	}
 
 	return nil
