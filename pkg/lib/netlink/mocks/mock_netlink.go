@@ -114,6 +114,21 @@ func (mr *MockNetlinkLibMockRecorder) AddrDel(link, ip interface{}) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrDel", reflect.TypeOf((*MockNetlinkLib)(nil).AddrDel), link, ip)
 }
 
+// GetRouteSrc mocks base method.
+func (m *MockNetlinkLib) GetRouteSrc(dst string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouteSrc", dst)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRouteSrc indicates an expected call of GetRouteSrc.
+func (mr *MockNetlinkLibMockRecorder) GetRouteSrc(dst interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouteSrc", reflect.TypeOf((*MockNetlinkLib)(nil).GetRouteSrc), dst)
+}
+
 // IPv4Addresses mocks base method.
 func (m *MockNetlinkLib) IPv4Addresses(link netlink.Link) ([]netlink0.Addr, error) {
 	m.ctrl.T.Helper()

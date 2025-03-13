@@ -30,6 +30,8 @@ type NetlinkLib interface {
 	AddrDel(link Link, ip string) error
 	// AddrAdd add an IP address to a link
 	AddrAdd(link Link, ip string) error
+	// GetRouteSrc returns the source IP address of a route
+	GetRouteSrc(dst string) (string, error)
 }
 
 type libWrapper struct{}
@@ -71,4 +73,20 @@ func (w *libWrapper) AddrAdd(link Link, ip string) error {
 		return fmt.Errorf("failed to parse IP address %s: %w", ip, err)
 	}
 	return netlink.AddrAdd(link, addr)
+}
+
+// GetRouteSrc returns the source IP address to a destination IP address
+func (w *libWrapper) GetRouteSrc(dst string) (string, error) {
+	ipaddr := net.ParseIP(dst)
+	if ipaddr == nil {
+		return "", fmt.Errorf("failed to parse IP address %s", dst)
+	}
+	routes, err := netlink.RouteGet(ipaddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to get routes for IP address %s: %w", dst, err)
+	}
+	if len(routes) != 1 {
+		return "", fmt.Errorf("multiple routes found for IP address %s", dst)
+	}
+	return routes[0].Src.String(), nil
 }

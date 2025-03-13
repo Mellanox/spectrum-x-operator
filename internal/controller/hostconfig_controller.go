@@ -19,11 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
+	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,6 +46,7 @@ type HostConfigReconciler struct {
 	ConfigMapNamespace string
 	ConfigMapName      string
 	Exec               exec.API
+	NetlinkLib         libnetlink.NetlinkLib
 }
 
 func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.ConfigMap) (ctrl.Result, error) {
@@ -97,24 +98,23 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 }
 
 func (r *HostConfigReconciler) addFlows(bridge string, pf string, rail config.HostRail) error {
-	localIPs, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}' | cut -d'/' -f1`,
-		bridge))
+	link, err := r.NetlinkLib.LinkByName(bridge)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get interface %s: %w", bridge, err)
 	}
-
-	for _, localIP := range strings.Split(localIPs, "\n") {
-		if localIP == "" {
-			continue
-		}
+	addrs, err := r.NetlinkLib.IPv4Addresses(link)
+	if err != nil {
+		return fmt.Errorf("failed to get addresses for interface %s: %w", bridge, err)
+	}
+	for _, addr := range addrs {
 		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:local"`,
-			bridge, defaultPriority, hostConfigCookie, localIP)
+			bridge, defaultPriority, hostConfigCookie, addr.IP)
 		if _, err := r.Exec.Execute(flow); err != nil {
 			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 		}
 
 		flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,actions=output:local"`,
-			bridge, defaultPriority, hostConfigCookie, localIP)
+			bridge, defaultPriority, hostConfigCookie, addr.IP)
 		if _, err := r.Exec.Execute(flow); err != nil {
 			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 		}
@@ -127,28 +127,19 @@ func (r *HostConfigReconciler) addFlows(bridge string, pf string, rail config.Ho
 		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
-	src, err := r.Exec.ExecutePrivileged(fmt.Sprintf(`ip route get %s | grep dev | awk '{print $5}'`, rail.PeerLeafPortIP))
+	src, err := r.NetlinkLib.GetRouteSrc(rail.PeerLeafPortIP)
 	if err != nil {
 		return err
 	}
 
-	localIPs, err = r.Exec.ExecutePrivileged(fmt.Sprintf(`ip -o -4 addr show %s |  awk '{print $4}'`, bridge))
-	if err != nil {
-		return err
-	}
-
-	for _, localIP := range strings.Split(localIPs, "\n") {
-		if localIP == "" {
-			continue
-		}
-
-		if !strings.Contains(localIP, src) {
+	for _, addr := range addrs {
+		if addr.IP.String() != src {
 			continue
 		}
 
 		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,`+
 			`ip,in_port=local,nw_dst=%s,actions=output:%s"`,
-			bridge, defaultPriority, hostConfigCookie, localIP, pf)
+			bridge, defaultPriority, hostConfigCookie, addr.IPNet.String(), pf)
 		if _, err := r.Exec.Execute(flow); err != nil {
 			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 		}
