@@ -24,6 +24,7 @@ import (
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
+	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +47,7 @@ type FlowReconciler struct {
 	Exec               exec.API
 	ConfigMapNamespace string
 	ConfigMapName      string
+	NetlinkLib         libnetlink.NetlinkLib
 }
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -138,7 +140,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 		logr.Info(fmt.Sprintf("Found interface [%s] from bridge [%s] for rail [%s]", iface, bridge, rail))
 
-		if err = r.handleRailFlows(ctx, &rail, cfg, ns, bridge, iface); err != nil {
+		if err = r.handleRailFlows(&rail, cfg, ns, bridge, iface); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail [%s]", rail))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
 			continue
@@ -148,7 +150,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	return result, nil
 }
 
-func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
+func (r *FlowReconciler) handleRailFlows(rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
 	pf, err := getRailDevice(rail.Name, cfg)
 	if err != nil {
 		return err
@@ -161,12 +163,14 @@ func (r *FlowReconciler) handleRailFlows(ctx context.Context, rail *config.HostR
 		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}
 
-	bridgeMAC, err := r.Exec.ExecutePrivileged(fmt.Sprintf("ip -o link show dev %s | awk '{print $17}'", bridge))
+	link, err := r.NetlinkLib.LinkByName(bridge)
 	if err != nil {
-		return fmt.Errorf("failed to get mac for rail [%s]: %v", rail, err)
+		return fmt.Errorf("failed to get interface %s: %w", bridge, err)
 	}
 
-	torMAC, err := r.getTorMac(ctx, rail)
+	bridgeMAC := link.Attrs().HardwareAddr
+
+	torMAC, err := r.getTorMac(link, rail)
 	if err != nil {
 		return fmt.Errorf("failed to get tor mac for rail [%s]: %v", rail, err)
 	}
@@ -245,8 +249,7 @@ func getBridgeToRail(rail *config.HostRail, cfg *config.Config, exec exec.API) (
 	return bridge, nil
 }
 
-func (r *FlowReconciler) getTorMac(ctx context.Context, rail *config.HostRail) (string, error) {
-	logr := log.FromContext(ctx)
+func (r *FlowReconciler) getTorMac(link libnetlink.Link, rail *config.HostRail) (string, error) {
 	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
 	// nsenter --target 1 --net -- ip neighbor | grep 2.0.0.3 | awk '{print $5}'
 	// TODO: check why it always return an error
@@ -256,16 +259,17 @@ func (r *FlowReconciler) getTorMac(ctx context.Context, rail *config.HostRail) (
 	// 	return "", err
 	// }
 
-	mac, err := r.Exec.ExecutePrivileged(fmt.Sprintf("ip neighbor | grep %s | awk '{print $5}'", rail.PeerLeafPortIP))
+	neighs, err := r.NetlinkLib.NeighList(link.Attrs().Index)
 	if err != nil {
-		logr.Error(err, fmt.Sprintf("failed to exec: ip neighbor | grep %s | awk '{print $5}'", rail.PeerLeafPortIP))
-		return "", err
-	}
-	if mac == "" {
-		return "", fmt.Errorf("mac is empty for TOR %s", rail.PeerLeafPortIP)
+		return "", fmt.Errorf("failed to get neighbors for link %s: %w", link.Attrs().Name, err)
 	}
 
-	return mac, nil
+	for _, n := range neighs {
+		if n.IP.String() == rail.PeerLeafPortIP {
+			return n.HardwareAddr.String(), nil
+		}
+	}
+	return "", fmt.Errorf("no mac found for TOR %s", rail.PeerLeafPortIP)
 }
 
 func (r *FlowReconciler) getConfig(ctx context.Context) (*config.Config, error) {

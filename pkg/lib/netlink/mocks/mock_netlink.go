@@ -186,3 +186,18 @@ func (mr *MockNetlinkLibMockRecorder) LinkSetUp(link interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSetUp", reflect.TypeOf((*MockNetlinkLib)(nil).LinkSetUp), link)
 }
+
+// NeighList mocks base method.
+func (m *MockNetlinkLib) NeighList(linkIndex int) ([]netlink0.Neigh, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NeighList", linkIndex)
+	ret0, _ := ret[0].([]netlink0.Neigh)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NeighList indicates an expected call of NeighList.
+func (mr *MockNetlinkLibMockRecorder) NeighList(linkIndex interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NeighList", reflect.TypeOf((*MockNetlinkLib)(nil).NeighList), linkIndex)
+}

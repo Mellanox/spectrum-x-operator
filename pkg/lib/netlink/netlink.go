@@ -32,6 +32,8 @@ type NetlinkLib interface {
 	AddrAdd(link Link, ip string) error
 	// GetRouteSrc returns the source IP address of a route
 	GetRouteSrc(dst string) (string, error)
+	// NieghList returns the neighbors of a link
+	NeighList(linkIndex int) ([]netlink.Neigh, error)
 }
 
 type libWrapper struct{}
@@ -89,4 +91,8 @@ func (w *libWrapper) GetRouteSrc(dst string) (string, error) {
 		return "", fmt.Errorf("multiple routes found for IP address %s", dst)
 	}
 	return routes[0].Src.String(), nil
+}
+
+func (w *libWrapper) NeighList(linkIndex int) ([]netlink.Neigh, error) {
+	return netlink.NeighList(linkIndex, netlink.FAMILY_V4)
 }
