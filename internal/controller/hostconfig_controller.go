@@ -82,6 +82,17 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
+		// delete normal action flows - creating a secured bridge is not supported with sriov-network-operator
+		// the error is ignored because in non secured bridge there are flows that cannot be deleted, specfically
+		// for cookie=0, the first time will work but second reconcile will fail.
+		// those are the default flows:
+		// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x1 actions=controller(reason=)
+		// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=2,recirc_id=0 actions=drop
+		// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x3 actions=drop
+		// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x2 actions=drop
+		// once the bridge is created as secured this code will be removed
+		_, _ = r.Exec.Execute(fmt.Sprintf("ovs-ofctl del-flows %s cookie=0x0/-1", bridge))
+
 		pf, err := getRailDevice(rail.Name, cfg)
 		if err != nil {
 			logr.Error(err, "failed to get rail device", "rail", rail)
