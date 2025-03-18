@@ -109,7 +109,7 @@ func validConfig() string {
 	return `{
 		"spectrum-x-networks": {
 		  "cross_rail_subnet": "192.0.0.0/8",
-		  "mtu": "9000",
+		  "mtu": 9000,
 		  "rails": [
 			{
 			  "name": "rail-1",
