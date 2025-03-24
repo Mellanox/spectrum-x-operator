@@ -13,10 +13,6 @@ data:
           {
             "name": "rail-1",
             "subnet": "192.0.0.0/11"
-          },
-          {
-            "name": "rail-2",
-            "subnet": "192.32.0.0/11"
           }
         ]
       },
@@ -24,10 +20,6 @@ data:
         {
           "rail_name": "rail-1",
           "dev_name": "eth0"
-        },
-        {
-          "rail_name": "rail-2",
-          "dev_name": "eth1"
         }
       ],
       "hosts": [
@@ -38,26 +30,6 @@ data:
               "name": "rail-1",
               "network": "192.0.0.0/31",
               "peer_leaf_port_ip": "172.0.0.0"
-            },
-            {
-              "name": "rail-2",
-              "network": "192.32.0.0/31",
-              "peer_leaf_port_ip": "172.32.0.0"
-            }
-          ]
-        },
-        {
-          "host_id": "host-2",
-          "rails": [
-            {
-              "name": "rail-1",
-              "network": "192.0.0.2/31",
-              "peer_leaf_port_ip": "172.0.0.2"
-            },
-            {
-              "name": "rail-2",
-              "network": "192.32.0.2/31",
-              "peer_leaf_port_ip": "172.32.0.2"
             }
           ]
         }
