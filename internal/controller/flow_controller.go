@@ -220,19 +220,12 @@ func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.Net
 }
 
 func getRailDevice(railName string, cfg *config.Config) (string, error) {
-	railDevice := ""
 	for _, mapping := range cfg.RailDeviceMapping {
 		if mapping.RailName == railName {
-			railDevice = mapping.DevName
-			break
+			return mapping.DevName, nil
 		}
 	}
-
-	if railDevice == "" {
-		return "", fmt.Errorf("failed to find device for rail %s", railName)
-	}
-
-	return railDevice, nil
+	return "", fmt.Errorf("failed to find device for rail %s", railName)
 }
 
 func getBridgeToRail(rail *config.HostRail, cfg *config.Config, exec exec.API) (string, error) {
