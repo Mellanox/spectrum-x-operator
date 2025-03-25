@@ -122,7 +122,7 @@ func main() {
 		Exec:               &exec.Exec{},
 		ConfigMapNamespace: configMapNamespace,
 		ConfigMapName:      configMapName,
-		NetlinkLib:         netlink.New(),
+		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		os.Exit(1)
@@ -134,7 +134,7 @@ func main() {
 		Exec:               &exec.Exec{},
 		ConfigMapNamespace: configMapNamespace,
 		ConfigMapName:      configMapName,
-		NetlinkLib:         netlink.New(),
+		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HostConfig")
 		os.Exit(1)
