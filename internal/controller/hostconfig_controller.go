@@ -18,11 +18,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
+	"go.uber.org/multierr"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,28 +75,35 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 		return reconcile.Result{}, nil
 	}
 
+	var errs error
+
 	for _, rail := range host.Rails {
 		bridge, err := getBridgeToRail(&rail, cfg, r.Exec)
 		if err != nil {
-			logr.Error(err, "failed to get bridge to rail", "rail", rail)
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+			errs = multierr.Append(errs, fmt.Errorf("failed to get bridge to rail [%v]:%v", rail, err))
+			continue
 		}
 
 		if err := r.Flows.DeleteBridgeDefaultFlows(bridge); err != nil {
-			logr.Error(err, "failed to delete bridge default flows", "bridge", bridge)
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+			errs = multierr.Append(errs, fmt.Errorf("failed to delete bridge default flows [%v] :%v", bridge, err))
+			continue
 		}
 
 		pf, err := getRailDevice(rail.Name, cfg)
 		if err != nil {
-			logr.Error(err, "failed to get rail device", "rail", rail)
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+			errs = multierr.Append(errs, fmt.Errorf("failed to get rail device [%v]:%v", rail, err))
+			continue
 		}
 
 		if err := r.Flows.AddHostRailFlows(bridge, pf, rail); err != nil {
-			logr.Error(err, "failed to add arp flows", "rail", rail)
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+			errs = multierr.Append(errs, fmt.Errorf("failed to add host rail flows: %v", err))
+			continue
 		}
+	}
+
+	if errs != nil {
+		logr.Error(errs, "failed to reconcile host config")
+		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
