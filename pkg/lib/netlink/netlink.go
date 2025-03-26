@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 func New() NetlinkLib {
@@ -56,7 +57,7 @@ func (w *libWrapper) IsLinkAdminStateUp(link Link) bool {
 
 // IPv4Adresses return the IPv4 addresses of a link
 func (w *libWrapper) IPv4Addresses(link Link) ([]netlink.Addr, error) {
-	return netlink.AddrList(link, netlink.FAMILY_V4)
+	return netlink.AddrList(link, unix.AF_INET)
 }
 
 // AddrDel delete an IP address from a link
@@ -94,5 +95,5 @@ func (w *libWrapper) GetRouteSrc(dst string) (string, error) {
 }
 
 func (w *libWrapper) NeighList(linkIndex int) ([]netlink.Neigh, error) {
-	return netlink.NeighList(linkIndex, netlink.FAMILY_V4)
+	return netlink.NeighList(linkIndex, unix.AF_INET)
 }
