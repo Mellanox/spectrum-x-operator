@@ -21,8 +21,11 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
+
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
+
+//go:generate ../../bin/mockgen -destination mock_flows.go -source flows.go -package controller
 
 type FlowsAPI interface {
 	DeleteBridgeDefaultFlows(bridge string) error
