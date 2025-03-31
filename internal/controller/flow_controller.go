@@ -26,6 +26,7 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+	"go.uber.org/multierr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -101,8 +102,8 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 	hostConfig, err := r.getHostConfig(cfg)
 	if err != nil {
-		logr.Error(err, "failed to get host network config")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		logr.Info("no config for this host", "host", r.NodeName, "error", err)
+		return ctrl.Result{}, nil
 	}
 
 	logr.Info(fmt.Sprintf("host confg %v", hostConfig))
@@ -150,6 +151,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 }
 
 func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.NetworkStatus) (string, *netdefv1.NetworkStatus, error) {
+	var errs error
 	for _, ns := range networkStatus {
 		// TODO change that to check for pod id once ovs-cni support that
 		// it will work now because we have a single pod inside each node,
@@ -157,18 +159,20 @@ func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.Net
 		iface, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=%s",
 			ns.Interface))
 		if err != nil {
-			return "", nil, err
+			errs = multierr.Append(errs, err)
+			continue
 		}
 		br, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl iface-to-br %s", iface))
 		if err != nil {
-			return "", nil, err
+			errs = multierr.Append(errs, err)
+			continue
 		}
 		if br == bridge {
 			return iface, &ns, nil
 		}
 	}
 
-	return "", nil, nil
+	return "", nil, errs
 }
 
 func getRailDevice(railName string, cfg *config.Config) (string, error) {
