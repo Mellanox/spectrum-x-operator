@@ -121,7 +121,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 		logr.Info(fmt.Sprintf("Found bridge %s ip for rail %s", bridge, rail))
 
 		// make sure there is a pod interface related to this bridge
-		iface, ns, err := r.ifaceToRail(bridge, relevantNetworkStatus)
+		iface, ns, err := r.ifaceToRail(bridge, pod.UID, relevantNetworkStatus)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get relevant interface for bridge %s", bridge))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
@@ -150,14 +150,12 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 	return result, nil
 }
 
-func (r *FlowReconciler) ifaceToRail(bridge string, networkStatus []netdefv1.NetworkStatus) (string, *netdefv1.NetworkStatus, error) {
+func (r *FlowReconciler) ifaceToRail(bridge string, podUID types.UID, networkStatus []netdefv1.NetworkStatus) (string, *netdefv1.NetworkStatus, error) {
 	var errs error
 	for _, ns := range networkStatus {
-		// TODO change that to check for pod id once ovs-cni support that
-		// it will work now because we have a single pod inside each node,
-		// for multi pod it can cause issues because multiple interfaces can have the same name
-		iface, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=%s",
-			ns.Interface))
+		iface, err := r.Exec.Execute(fmt.Sprintf(`ovs-vsctl --no-heading --columns=name find Port `+
+			`external_ids:contIface=%s external_ids:contPodUid=%s`,
+			ns.Interface, podUID))
 		if err != nil {
 			errs = multierr.Append(errs, err)
 			continue
