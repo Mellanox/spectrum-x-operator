@@ -30,7 +30,7 @@ import (
 type FlowsAPI interface {
 	DeleteBridgeDefaultFlows(bridge string) error
 	AddHostRailFlows(bridge string, pf string, rail config.HostRail) error
-	AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error
+	AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error
 }
 
 var _ FlowsAPI = &Flows{}
@@ -106,7 +106,7 @@ func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail)
 	return nil
 }
 
-func (f *Flows) AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
+func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
 	pf, err := getRailDevice(rail.Name, cfg)
 	if err != nil {
 		return err
@@ -114,7 +114,7 @@ func (f *Flows) AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *n
 
 	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0, arp,arp_tpa=${CONTAINER_IP} actions=output:${REP_PORT}"
 	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:%s"`,
-		bridge, defaultPriority, flowCookie, ns.IPs[0], iface)
+		bridge, defaultPriority, cookie, ns.IPs[0], iface)
 	if _, err := f.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}
@@ -136,7 +136,7 @@ func (f *Flows) AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *n
 	// setting the priority to avoid conflicts with a more specific flows
 	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,in_port=%s,`+
 		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
-		bridge, defaultPriority/2, flowCookie, iface, bridgeMAC, torMAC, pf)
+		bridge, defaultPriority/2, cookie, iface, bridgeMAC, torMAC, pf)
 	if _, err := f.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}
@@ -145,7 +145,7 @@ func (f *Flows) AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *n
 	// actions=mod_dl_src=${ROUTER_MAC},mod_dl_dst=${CONTAINER_MAC},dec_ttl, output=${REP_PORT}"
 	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,`+
 		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
-		bridge, defaultPriority, flowCookie, ns.IPs[0], bridgeMAC, ns.Mac, iface)
+		bridge, defaultPriority, cookie, ns.IPs[0], bridgeMAC, ns.Mac, iface)
 	if _, err := f.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
 	}

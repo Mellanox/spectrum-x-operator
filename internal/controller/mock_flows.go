@@ -50,17 +50,17 @@ func (mr *MockFlowsAPIMockRecorder) AddHostRailFlows(bridge, pf, rail interface{
 }
 
 // AddPodRailFlows mocks base method.
-func (m *MockFlowsAPI) AddPodRailFlows(rail *config.HostRail, cfg *config.Config, ns *v1.NetworkStatus, bridge, iface string) error {
+func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *v1.NetworkStatus, bridge, iface string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddPodRailFlows", rail, cfg, ns, bridge, iface)
+	ret := m.ctrl.Call(m, "AddPodRailFlows", cookie, rail, cfg, ns, bridge, iface)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddPodRailFlows indicates an expected call of AddPodRailFlows.
-func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(rail, cfg, ns, bridge, iface interface{}) *gomock.Call {
+func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, rail, cfg, ns, bridge, iface interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), rail, cfg, ns, bridge, iface)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, rail, cfg, ns, bridge, iface)
 }
 
 // DeleteBridgeDefaultFlows mocks base method.

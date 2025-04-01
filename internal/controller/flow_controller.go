@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
@@ -110,6 +111,8 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 	result := ctrl.Result{}
 
+	cookie := GenerateUint64FromString(types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String())
+
 	for _, rail := range hostConfig.Rails {
 		bridge, err := getBridgeToRail(&rail, cfg, r.Exec)
 		if err != nil {
@@ -140,7 +143,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 		logr.Info(fmt.Sprintf("Found interface [%s] from bridge [%s] for rail [%s]", iface, bridge, rail))
 
-		if err = r.Flows.AddPodRailFlows(&rail, cfg, ns, bridge, iface); err != nil {
+		if err = r.Flows.AddPodRailFlows(cookie, &rail, cfg, ns, bridge, iface); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail [%s]", rail))
 			result = ctrl.Result{RequeueAfter: 5 * time.Second}
 			continue
@@ -294,4 +297,11 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(
 			reconcile.AsReconciler(r.Client, r),
 		)
+}
+
+// GenerateUint64FromString hashes a string and returns a uint64
+func GenerateUint64FromString(input string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(input))
+	return h.Sum64()
 }
