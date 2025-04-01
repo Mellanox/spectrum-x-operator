@@ -31,6 +31,7 @@ type FlowsAPI interface {
 	DeleteBridgeDefaultFlows(bridge string) error
 	AddHostRailFlows(bridge string, pf string, rail config.HostRail) error
 	AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error
+	DeletePodRailFlows(cookie uint64, bridge string) error
 }
 
 var _ FlowsAPI = &Flows{}
@@ -151,6 +152,12 @@ func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *confi
 	}
 
 	return nil
+}
+
+func (f *Flows) DeletePodRailFlows(cookie uint64, bridge string) error {
+	flow := fmt.Sprintf(`ovs-ofctl del-flows %s cookie=0x%x/-1`, bridge, cookie)
+	_, err := f.Exec.Execute(flow)
+	return err
 }
 
 func (f *Flows) getTorMac(link libnetlink.Link, rail *config.HostRail) (string, error) {

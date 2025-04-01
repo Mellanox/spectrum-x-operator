@@ -168,8 +168,8 @@ var _ = Describe("Pod Controller", func() {
 		Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
 
 		result, err := flowController.Reconcile(ctx, pod)
-		Expect(err).Should(Succeed())
-		Expect(result).To(Equal(reconcile.Result{RequeueAfter: 5 * time.Second}))
+		Expect(err).Should(HaveOccurred())
+		Expect(result).To(Equal(reconcile.Result{}))
 	})
 
 	// TODO: implement
@@ -236,8 +236,8 @@ var _ = Describe("Pod Controller", func() {
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			result, err := flowController.Reconcile(ctx, pod)
-			Expect(err).Should(Succeed())
-			Expect(result).To(Equal(reconcile.Result{RequeueAfter: 5 * time.Second}))
+			Expect(err).Should(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
 		It("fail to get relevant interface for bridge", func() {
@@ -256,8 +256,8 @@ var _ = Describe("Pod Controller", func() {
 
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 			result, err := flowController.Reconcile(ctx, pod)
-			Expect(err).Should(Succeed())
-			Expect(result).To(Equal(reconcile.Result{RequeueAfter: 5 * time.Second}))
+			Expect(err).Should(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
 		It("no relevant interface for bridge", func() {
@@ -281,6 +281,27 @@ var _ = Describe("Pod Controller", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
+		It("failed to get iface to bridge", func() {
+			// rail1
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rail1", nil)
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-1", nil).Times(2)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("", fmt.Errorf("failed to get iface to bridge")).Times(2)
+
+			// rail2
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-rail2", nil)
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-2", nil).Times(2)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil).Times(2)
+
+			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			result, err := flowController.Reconcile(ctx, pod)
+			Expect(err).Should(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
 		It("failed to add flows to rail", func() {
 			// rail1
 			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rail1", nil)
@@ -300,8 +321,31 @@ var _ = Describe("Pod Controller", func() {
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			result, err := flowController.Reconcile(ctx, pod)
+			Expect(err).Should(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
+		It("delete flows on pod deletion", func() {
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-rail2", nil)
+
+			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+			pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+			result, err := flowController.Reconcile(ctx, pod)
 			Expect(err).Should(Succeed())
-			Expect(result).To(Equal(reconcile.Result{RequeueAfter: 5 * time.Second}))
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
+		It("failed to delete flows on pod deletion - do not fail reconciliation", func() {
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-rail2", nil)
+
+			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(fmt.Errorf("failed to delete flows"))
+			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(nil)
+			pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+			result, err := flowController.Reconcile(ctx, pod)
+			Expect(err).Should(Succeed())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 	})
 })

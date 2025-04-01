@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
@@ -38,8 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
-
-const flowCookie = 0x2
 
 // FlowReconciler reconciles a Pod object
 type FlowReconciler struct {
@@ -95,39 +92,56 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 	logr.Info(fmt.Sprintf("pod network status: %+v", relevantNetworkStatus))
 
+	return ctrl.Result{}, r.handlePodFlows(ctx, pod, relevantNetworkStatus)
+}
+
+func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, relevantNetworkStatus []netdefv1.NetworkStatus) error {
+	logr := log.FromContext(ctx)
+
 	cfg, err := r.getConfig(ctx)
 	if err != nil {
 		logr.Error(err, "failed to get network config")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		return err
 	}
 
 	hostConfig, err := r.getHostConfig(cfg)
 	if err != nil {
 		logr.Info("no config for this host", "host", r.NodeName, "error", err)
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	logr.Info(fmt.Sprintf("host confg %v", hostConfig))
 
-	result := ctrl.Result{}
-
 	cookie := GenerateUint64FromString(types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String())
+
+	if pod.DeletionTimestamp != nil {
+		logr.Info(fmt.Sprintf("pod %s/%s is being deleted, deleting flows", pod.Namespace, pod.Name))
+	}
+
+	var errs error
 
 	for _, rail := range hostConfig.Rails {
 		bridge, err := getBridgeToRail(&rail, cfg, r.Exec)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get bridge for rail %s", rail))
-			result = ctrl.Result{RequeueAfter: 5 * time.Second}
+			errs = multierr.Append(errs, err)
 			continue
 		}
 
 		logr.Info(fmt.Sprintf("Found bridge %s ip for rail %s", bridge, rail))
 
+		if pod.DeletionTimestamp != nil {
+			if err = r.Flows.DeletePodRailFlows(cookie, bridge); err != nil {
+				logr.Error(err, fmt.Sprintf("failed to delete flows for rail %s", rail))
+			}
+			continue
+		}
+
 		// make sure there is a pod interface related to this bridge
 		iface, ns, err := r.ifaceToRail(bridge, pod.UID, relevantNetworkStatus)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get relevant interface for bridge %s", bridge))
-			result = ctrl.Result{RequeueAfter: 5 * time.Second}
+			errs = multierr.Append(errs, err)
 			continue
 		}
 		if iface == "" {
@@ -145,12 +159,12 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 		if err = r.Flows.AddPodRailFlows(cookie, &rail, cfg, ns, bridge, iface); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail [%s]", rail))
-			result = ctrl.Result{RequeueAfter: 5 * time.Second}
+			errs = multierr.Append(errs, err)
 			continue
 		}
 	}
 
-	return result, nil
+	return errs
 }
 
 func (r *FlowReconciler) ifaceToRail(bridge string, podUID types.UID, networkStatus []netdefv1.NetworkStatus) (string, *netdefv1.NetworkStatus, error) {
