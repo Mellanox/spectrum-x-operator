@@ -59,3 +59,14 @@ rules:
   - get
   - list
   - patch
+- apiGroups:
+  - sriovnetwork.openshift.io
+  resources:
+  - ovsnetworks
+  - sriovnetworknodepolicies
+  verbs:
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
