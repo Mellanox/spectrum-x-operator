@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -27,11 +28,13 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	env "github.com/caarlos0/env/v11"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -55,6 +58,7 @@ var Options struct {
 	NodeName string `env:"NODE_NAME"`
 }
 
+//nolint:funlen
 func main() {
 	var metricsAddr string
 	var probeAddr string
@@ -118,11 +122,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	ovsWatcher := make(chan event.TypedGenericEvent[struct{}])
+	ovsWatcherHostConfig := make(chan event.TypedGenericEvent[struct{}])
+	ovsWatcherFlowsController := make(chan event.TypedGenericEvent[struct{}])
 
 	filewatcher.WatchFile("/var/run/openvswitch/ovs-vswitchd.pid", func() {
-		ovsWatcher <- event.TypedGenericEvent[struct{}]{}
+		ovsWatcherHostConfig <- event.TypedGenericEvent[struct{}]{}
+		ovsWatcherFlowsController <- event.TypedGenericEvent[struct{}]{}
 	}, nil)
+
+	// index pods by node name, used by the FlowReconciler to watch relevant pods
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&corev1.Pod{},
+		"spec.nodeName",
+		func(obj client.Object) []string {
+			pod := obj.(*corev1.Pod)
+			return []string{pod.Spec.NodeName}
+		},
+	); err != nil {
+		setupLog.Error(err, "unable to index pods by node name")
+		os.Exit(1)
+	}
 
 	if err = (&controller.FlowReconciler{
 		NodeName:           Options.NodeName,
@@ -131,6 +151,7 @@ func main() {
 		ConfigMapNamespace: configMapNamespace,
 		ConfigMapName:      configMapName,
 		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+		OVSWatcher:         ovsWatcherFlowsController,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		os.Exit(1)
@@ -143,7 +164,7 @@ func main() {
 		ConfigMapNamespace: configMapNamespace,
 		ConfigMapName:      configMapName,
 		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
-		OVSWatcher:         ovsWatcher,
+		OVSWatcher:         ovsWatcherHostConfig,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HostConfig")
 		os.Exit(1)

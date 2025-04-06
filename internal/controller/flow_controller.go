@@ -32,10 +32,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // FlowReconciler reconciles a Pod object
@@ -46,6 +48,7 @@ type FlowReconciler struct {
 	ConfigMapNamespace string
 	ConfigMapName      string
 	Flows              FlowsAPI
+	OVSWatcher         <-chan event.TypedGenericEvent[struct{}]
 }
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -257,6 +260,28 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return true
 	}
 
+	hostPodMapFunc := handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj struct{}) []reconcile.Request {
+		pods := &corev1.PodList{}
+		if err := r.List(ctx, pods, client.MatchingFields{"spec.nodeName": r.NodeName}); err != nil {
+			log.Log.Error(err, "FlowReconciler failed to list pods")
+			return nil
+		}
+
+		requests := []reconcile.Request{}
+		for _, pod := range pods.Items {
+			if isPodRelevant(&pod) {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: pod.Namespace,
+						Name:      pod.Name,
+					},
+				})
+			}
+		}
+
+		return requests
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
@@ -308,6 +333,7 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					configMap.Namespace == r.ConfigMapNamespace
 			})),
 		).
+		WatchesRawSource(source.Channel(r.OVSWatcher, hostPodMapFunc)).
 		Complete(
 			reconcile.AsReconciler(r.Client, r),
 		)
