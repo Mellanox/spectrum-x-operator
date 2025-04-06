@@ -127,7 +127,7 @@ func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *confi
 
 	bridgeMAC := link.Attrs().HardwareAddr
 
-	torMAC, err := f.getTorMac(link, rail)
+	torMAC, err := f.getTorMac(rail)
 	if err != nil {
 		return fmt.Errorf("failed to get tor mac for rail [%s]: %v", rail, err)
 	}
@@ -160,25 +160,20 @@ func (f *Flows) DeletePodRailFlows(cookie uint64, bridge string) error {
 	return err
 }
 
-func (f *Flows) getTorMac(link libnetlink.Link, rail *config.HostRail) (string, error) {
+func (f *Flows) getTorMac(rail *config.HostRail) (string, error) {
 	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
 	// nsenter --target 1 --net -- ip neighbor | grep 2.0.0.3 | awk '{print $5}'
 	// TODO: check why it always return an error
-	_, _ = f.Exec.ExecutePrivileged(fmt.Sprintf("arping %s -c 1", rail.PeerLeafPortIP))
+	reply, _ := f.Exec.ExecutePrivileged(fmt.Sprintf(`arping %s -c 1 | grep "reply from" | awk '{print $5}' | tr -d '[]'`,
+		rail.PeerLeafPortIP))
 	// if err != nil {
 	// 	logr.Error(err, fmt.Sprintf("failed to exec: arping %s -c 1", rail.Tor))
 	// 	return "", err
 	// }
 
-	neighs, err := f.NetlinkLib.NeighList(link.Attrs().Index)
-	if err != nil {
-		return "", fmt.Errorf("failed to get neighbors for link %s: %w", link.Attrs().Name, err)
+	if reply == "" {
+		return "", fmt.Errorf("no reply from arping %s", rail.PeerLeafPortIP)
 	}
 
-	for _, n := range neighs {
-		if n.IP.String() == rail.PeerLeafPortIP {
-			return n.HardwareAddr.String(), nil
-		}
-	}
-	return "", fmt.Errorf("no mac found for TOR %s", rail.PeerLeafPortIP)
+	return reply, nil
 }
