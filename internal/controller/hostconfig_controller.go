@@ -26,11 +26,15 @@ import (
 
 	"go.uber.org/multierr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
@@ -47,6 +51,7 @@ type HostConfigReconciler struct {
 	ConfigMapName      string
 	Exec               exec.API
 	Flows              FlowsAPI
+	OVSWatcher         <-chan event.TypedGenericEvent[struct{}]
 }
 
 func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.ConfigMap) (ctrl.Result, error) {
@@ -120,5 +125,17 @@ func (r *HostConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return cm.Name == r.ConfigMapName &&
 				cm.Namespace == r.ConfigMapNamespace
 		})).
+		WatchesRawSource(source.Channel(r.OVSWatcher,
+			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj struct{}) []reconcile.Request {
+				return []reconcile.Request{
+					{
+						NamespacedName: types.NamespacedName{
+							Namespace: r.ConfigMapNamespace,
+							Name:      r.ConfigMapName,
+						},
+					},
+				}
+			}),
+		)).
 		Complete(reconcile.AsReconciler(r.Client, r))
 }
