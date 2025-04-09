@@ -39,6 +39,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
+
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/version"
 
@@ -55,7 +57,19 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(nvipamv1.AddToScheme(scheme))
+	utilruntime.Must(sriovnetworkv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+}
+
+func setupChecks(mgr ctrl.Manager) {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
 }
 
 func main() {
@@ -69,6 +83,7 @@ func main() {
 	var configMapNamespace string
 	var configMapName string
 	var cidrPoolsNamespace string
+	var sriovObjNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -83,6 +98,7 @@ func main() {
 	flag.StringVar(&configMapNamespace, "cm-namespace", "default", "Spectrum-x config map namespace")
 	flag.StringVar(&configMapName, "cm-name", "specx-config", "Spectrum-x config map name")
 	flag.StringVar(&cidrPoolsNamespace, "cidrpools-namespace", "default", "CIDRPools namespace")
+	flag.StringVar(&sriovObjNamespace, "sriov-obj-namespace", "default", "SRIOV Network Operator namespace")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -170,16 +186,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.SRIOVReconciler{
+		Client:             mgr.GetClient(),
+		ConfigMapNamespace: configMapNamespace,
+		ConfigMapName:      configMapName,
+		SriovObjNamespace:  sriovObjNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create SRIOVReconciler", "SRIOVReconciler", "ConfigMap")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
+	setupChecks(mgr)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
