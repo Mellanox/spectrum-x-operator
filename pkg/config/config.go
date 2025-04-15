@@ -33,6 +33,7 @@ type Rail struct {
 
 type SpectrumXNetworks struct {
 	CrossRailSubnet string `json:"cross_rail_subnet"` // /8 subnet
+	InfraRailSubnet string `json:"infra_rail_subnet"` // /8 subnet for 3-tier /12 for 2-tair
 	MTU             uint   `json:"mtu"`
 	Rails           []Rail `json:"rails"`
 }

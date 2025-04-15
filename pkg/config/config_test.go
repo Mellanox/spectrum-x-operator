@@ -50,6 +50,7 @@ func validConfig() string {
 	jsonData := `{
   "spectrum-x-networks": {
     "cross_rail_subnet": "192.0.0.0/8",
+    "infra_rail_subnet": "172.0.0.0/8",
     "mtu": 9000,
     "rails": [
       {
