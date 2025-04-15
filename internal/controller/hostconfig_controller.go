@@ -111,11 +111,13 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
+	logr.Info("reconcile host config success")
 	return ctrl.Result{}, nil
 }
 
 func (r *HostConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("HostConfigReconciler").
 		For(&corev1.ConfigMap{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
 			cm, ok := object.(*corev1.ConfigMap)

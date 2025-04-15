@@ -283,6 +283,7 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("FlowReconciler").
 		For(&corev1.Pod{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
 			// don't ignore config map changes - it may be topology config map
