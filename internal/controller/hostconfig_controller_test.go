@@ -99,7 +99,7 @@ var _ = Describe("HostConfig Controller", func() {
 			// rail2
 			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-rel2", nil)
 			flowsMock.EXPECT().DeleteBridgeDefaultFlows("br-rel2").Return(nil)
-			flowsMock.EXPECT().AddHostRailFlows("br-rel2", "eth1", gomock.Any()).Return(nil)
+			flowsMock.EXPECT().AddHostRailFlows("br-rel2", "eth1", gomock.Any(), gomock.Any()).Return(nil)
 
 		})
 
@@ -126,7 +126,7 @@ var _ = Describe("HostConfig Controller", func() {
 			// rail1
 			execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rel1", nil)
 			flowsMock.EXPECT().DeleteBridgeDefaultFlows("br-rel1").Return(nil)
-			flowsMock.EXPECT().AddHostRailFlows("br-rel1", "eth0", gomock.Any()).Return(fmt.Errorf("error"))
+			flowsMock.EXPECT().AddHostRailFlows("br-rel1", "eth0", gomock.Any(), gomock.Any()).Return(fmt.Errorf("error"))
 
 			res, err := hostConfigController.Reconcile(ctx, cm)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -141,12 +141,12 @@ var _ = Describe("HostConfig Controller", func() {
 		// rail1
 		execMock.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-rel1", nil)
 		flowsMock.EXPECT().DeleteBridgeDefaultFlows("br-rel1").Return(nil)
-		flowsMock.EXPECT().AddHostRailFlows("br-rel1", "eth0", gomock.Any()).Return(nil)
+		flowsMock.EXPECT().AddHostRailFlows("br-rel1", "eth0", gomock.Any(), gomock.Any()).Return(nil)
 
 		// rail2
 		execMock.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-rel2", nil)
 		flowsMock.EXPECT().DeleteBridgeDefaultFlows("br-rel2").Return(nil)
-		flowsMock.EXPECT().AddHostRailFlows("br-rel2", "eth1", gomock.Any()).Return(nil)
+		flowsMock.EXPECT().AddHostRailFlows("br-rel2", "eth1", gomock.Any(), gomock.Any()).Return(nil)
 
 		res, err := hostConfigController.Reconcile(ctx, cm)
 		Expect(err).ShouldNot(HaveOccurred())

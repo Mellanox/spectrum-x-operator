@@ -29,7 +29,7 @@ import (
 
 type FlowsAPI interface {
 	DeleteBridgeDefaultFlows(bridge string) error
-	AddHostRailFlows(bridge string, pf string, rail config.HostRail) error
+	AddHostRailFlows(bridge string, pf string, rail config.HostRail, infraRailSubnet string) error
 	AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error
 	DeletePodRailFlows(cookie uint64, bridge string) error
 }
@@ -56,7 +56,7 @@ func (f *Flows) DeleteBridgeDefaultFlows(bridge string) error {
 	return nil
 }
 
-func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail) error {
+func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail, infraRailSubnet string) error {
 	link, err := f.NetlinkLib.LinkByName(bridge)
 	if err != nil {
 		return fmt.Errorf("failed to get interface %s: %w", bridge, err)
@@ -86,22 +86,11 @@ func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail)
 		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
-	src, err := f.NetlinkLib.GetRouteSrc(rail.PeerLeafPortIP)
-	if err != nil {
-		return err
-	}
-
-	for _, addr := range addrs {
-		if addr.IP.String() != src {
-			continue
-		}
-
-		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,`+
-			`ip,in_port=local,nw_dst=%s,actions=output:%s"`,
-			bridge, defaultPriority, hostConfigCookie, addr.IPNet.String(), pf)
-		if _, err := f.Exec.Execute(flow); err != nil {
-			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-		}
+	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,`+
+		`ip,in_port=local,nw_dst=%s,actions=output:%s"`,
+		bridge, defaultPriority, hostConfigCookie, infraRailSubnet, pf)
+	if _, err := f.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
 	}
 
 	return nil

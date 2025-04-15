@@ -100,7 +100,7 @@ func (r *HostConfigReconciler) Reconcile(ctx context.Context, conf *corev1.Confi
 			continue
 		}
 
-		if err := r.Flows.AddHostRailFlows(bridge, pf, rail); err != nil {
+		if err := r.Flows.AddHostRailFlows(bridge, pf, rail, cfg.SpectrumXNetworks.InfraRailSubnet); err != nil {
 			errs = multierr.Append(errs, fmt.Errorf("failed to add host rail flows: %v", err))
 			continue
 		}

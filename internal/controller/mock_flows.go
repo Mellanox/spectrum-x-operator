@@ -36,17 +36,17 @@ func (m *MockFlowsAPI) EXPECT() *MockFlowsAPIMockRecorder {
 }
 
 // AddHostRailFlows mocks base method.
-func (m *MockFlowsAPI) AddHostRailFlows(bridge, pf string, rail config.HostRail) error {
+func (m *MockFlowsAPI) AddHostRailFlows(bridge, pf string, rail config.HostRail, infraRailSubnet string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddHostRailFlows", bridge, pf, rail)
+	ret := m.ctrl.Call(m, "AddHostRailFlows", bridge, pf, rail, infraRailSubnet)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddHostRailFlows indicates an expected call of AddHostRailFlows.
-func (mr *MockFlowsAPIMockRecorder) AddHostRailFlows(bridge, pf, rail interface{}) *gomock.Call {
+func (mr *MockFlowsAPIMockRecorder) AddHostRailFlows(bridge, pf, rail, infraRailSubnet interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHostRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddHostRailFlows), bridge, pf, rail)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHostRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddHostRailFlows), bridge, pf, rail, infraRailSubnet)
 }
 
 // AddPodRailFlows mocks base method.
