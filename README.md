@@ -12,4 +12,4 @@ and should not be regarded as a standalone component.
 
 Network Operator Documentation can be found [here](https://docs.nvidia.com/networking/software/cloud-orchestration/index.html)
 
-> __NOTE__: This project is currently under active development.
+> __NOTE__: This project is currently under active development and should be considered Tech Preview only.
