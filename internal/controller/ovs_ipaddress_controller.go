@@ -154,25 +154,24 @@ func (r *OvsIPaddressReconciler) processRailDeviceMapping(ctx context.Context, m
 
 	// Extract the full CIDR (IP + subnet mask)
 	railCIDR := railAddrs[0].String()
+	// Ensure railCIDR is correctly formatted (strip unwanted text)
+	railCIDR = strings.Fields(railCIDR)[0] // Keep only the IP/CIDR part
 	railIP := railAddrs[0].IP.String()
 	logr.Info("Rail IP with subnet", "rail", rail, "dev", railDevice, "CIDR", railCIDR)
 
 	// Ensure the bridge has the rail IP (with subnet) and move it from railDevice if needed
 	if _, exists := bridgeIPSet[railIP]; !exists {
-		// Ensure railCIDR is correctly formatted (strip unwanted text)
-		railCIDR = strings.Fields(railCIDR)[0] // Keep only the IP/CIDR part
-
 		logr.Info("Moving rail IP to bridge", "rail", rail, "dev", railDevice, "IP", railCIDR, "bridge", bridgeInternalIfc)
 
 		// Add railIP (with original subnet mask) to the bridge interface
 		if err := r.addIPToInterface(bridgeInternalIfc, railCIDR); err != nil {
 			return fmt.Errorf("failed to add rail IP %s to OVS bridge interface %s: %w", railCIDR, bridgeInternalIfc, err)
 		}
+	}
 
-		// Remove railIP (with original subnet mask) from the physical railDevice
-		if err := r.removeIPFromInterface(railDevice, railCIDR); err != nil {
-			return fmt.Errorf("failed to remove rail IP %s from physical port %s: %w", railCIDR, railDevice, err)
-		}
+	// Remove railIP (with original subnet mask) from the physical railDevice
+	if err := r.removeIPFromInterface(railDevice, railCIDR); err != nil {
+		return fmt.Errorf("failed to remove rail IP %s from physical port %s: %w", railCIDR, railDevice, err)
 	}
 
 	return nil

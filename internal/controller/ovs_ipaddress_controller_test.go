@@ -135,6 +135,42 @@ var _ = Describe("OvsIPaddressReconciler", func() {
 			Expect(err).To(BeNil())
 			Expect(result).To(Equal(ctrl.Result{}))
 		})
+		It("should succeed reconcile - ip already exists on the bridge", func() {
+			By("Reconciling the created config map with valid json")
+			updateConfigMap(ctx, ns.Name, validConfig())
+			// Port 1
+			eth0Link := &netlink.Dummy{}
+			internalLink1 := &netlink.Dummy{}
+			mockExec.EXPECT().Execute("ovs-vsctl port-to-br eth0").Return("br-0000_08_00.1", nil)
+			mockNetlink.EXPECT().LinkByName("br-0000_08_00.1").Return(internalLink1, nil).AnyTimes()
+			mockNetlink.EXPECT().IsLinkAdminStateUp(internalLink1).Return(false)
+			mockNetlink.EXPECT().LinkSetUp(internalLink1).Return(nil)
+			By("ip already exists on the bridge and need to be removed from the physical port")
+			eth0Addr := netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP("172.0.0.2"), Mask: net.CIDRMask(24, 32)}}
+			mockNetlink.EXPECT().IPv4Addresses(internalLink1).Return([]netlink.Addr{eth0Addr}, nil)
+			mockNetlink.EXPECT().AddrAdd(internalLink1, "192.0.0.1/31").Return(nil)
+			mockNetlink.EXPECT().LinkByName("eth0").Return(eth0Link, nil).AnyTimes()
+			mockNetlink.EXPECT().IPv4Addresses(eth0Link).Return([]netlink.Addr{eth0Addr}, nil)
+			mockNetlink.EXPECT().AddrDel(eth0Link, "172.0.0.2/24").Return(nil)
+			// Port 2
+			internalLink2 := &netlink.Dummy{}
+			mockExec.EXPECT().Execute("ovs-vsctl port-to-br eth1").Return("br-0000_08_00.2", nil)
+			mockNetlink.EXPECT().LinkByName("br-0000_08_00.2").Return(internalLink2, nil).AnyTimes()
+			mockNetlink.EXPECT().IsLinkAdminStateUp(internalLink2).Return(false)
+			mockNetlink.EXPECT().LinkSetUp(internalLink2).Return(nil)
+			mockNetlink.EXPECT().IPv4Addresses(internalLink2).Return([]netlink.Addr{}, nil)
+			mockNetlink.EXPECT().AddrAdd(internalLink2, "192.32.0.1/31").Return(nil)
+			eth1Link := &netlink.Dummy{}
+			mockNetlink.EXPECT().LinkByName("eth1").Return(eth1Link, nil).AnyTimes()
+			mockNetlink.EXPECT().IPv4Addresses(eth1Link).Return([]netlink.Addr{
+				{IPNet: &net.IPNet{IP: net.ParseIP("172.32.0.2"), Mask: net.CIDRMask(24, 32)}},
+			}, nil)
+			mockNetlink.EXPECT().AddrAdd(internalLink2, "172.32.0.2/24").Return(nil)
+			mockNetlink.EXPECT().AddrDel(eth1Link, "172.32.0.2/24").Return(nil)
+			result, err := r.Reconcile(ctx, request)
+			Expect(err).To(BeNil())
+			Expect(result).To(Equal(ctrl.Result{}))
+		})
 	})
 
 	Describe("processRailDeviceMapping", func() {
