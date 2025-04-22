@@ -64,6 +64,7 @@ rules:
   resources:
   - ovsnetworks
   - sriovnetworknodepolicies
+  - sriovnetworkpoolconfigs
   verbs:
   - create
   - delete

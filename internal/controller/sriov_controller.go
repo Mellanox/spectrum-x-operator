@@ -46,6 +46,8 @@ const (
 	ovsDataPathType              = "netdev"
 	ovsNetworkInterfaceType      = "dpdk"
 	sriovNodePolicyType          = "SriovNetworkNodePolicy"
+	sriovPoolConfigType          = "SriovNetworkPoolConfig"
+	sriovPoolConfigName          = "spectrum-x-node-pool-config"
 	sriovNodePolicyNodeSelector  = "node-role.kubernetes.io/worker"
 	spectrumXSRIOVFinalizer      = "spectrumx.nvidia.com/sriovnetwork-finalizer"
 )
@@ -62,6 +64,7 @@ type SRIOVReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=ovsnetworks,verbs=create;get;list;patch;delete;deletecollection
 //+kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=sriovnetworknodepolicies,verbs=create;get;list;patch;delete;deletecollection
+//+kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=sriovnetworkpoolconfigs,verbs=create;get;list;patch;delete;deletecollection
 
 func (r *SRIOVReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logr := log.FromContext(ctx)
@@ -99,6 +102,12 @@ func (r *SRIOVReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
+	err = r.reconcileSRIOVNetworkPoolConfig(ctx)
+	if err != nil {
+		logr.Info("Failed to reconcile SriovNetworkPoolConfig")
+		return ctrl.Result{}, err
+	}
+
 	err = r.reconcileSRIOVNetworkNodePolicy(ctx, spectrumXConfig)
 	if err != nil {
 		logr.Info("Failed to reconcile SRIOVNetworkNodePolicy")
@@ -123,6 +132,17 @@ func (r *SRIOVReconciler) reconcileOVSNetwork(ctx context.Context, cfg *config.C
 		if err := r.Client.Patch(ctx, network, client.Apply, client.ForceOwnership, client.FieldOwner(spectrumXSRIOVControllerName)); err != nil {
 			return fmt.Errorf("error while patching %s %s: %w", network.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(network), err)
 		}
+	}
+	return nil
+}
+
+// reconcileSRIOVNetworkNodePolicy generates SriovNetworkPoolConfig
+func (r *SRIOVReconciler) reconcileSRIOVNetworkPoolConfig(ctx context.Context) error {
+	logr := log.FromContext(ctx)
+	poolConfig := r.generateSriovNetworkPoolConfig()
+	logr.Info("Creating SriovNetworkPoolConfig", "name", poolConfig.Spec)
+	if err := r.Client.Patch(ctx, poolConfig, client.Apply, client.ForceOwnership, client.FieldOwner(spectrumXSRIOVControllerName)); err != nil {
+		return fmt.Errorf("error while patching %s %s: %w", poolConfig.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(poolConfig), err)
 	}
 	return nil
 }
@@ -162,6 +182,42 @@ func (r *SRIOVReconciler) generateOVSNetwork(rail *config.Rail, mtu uint) *sriov
 	network.ObjectMeta.ManagedFields = nil
 	network.SetGroupVersionKind(sriovnetworkv1.GroupVersion.WithKind(ovsNetworkType))
 	return network
+}
+
+// generateSriovNetworkPoolConfig generates a SriovNetworkPoolConfig object
+func (r *SRIOVReconciler) generateSriovNetworkPoolConfig() *sriovnetworkv1.SriovNetworkPoolConfig {
+	nodeSelector := metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			sriovNodePolicyNodeSelector: "",
+		},
+	}
+
+	ovsHardwareOffloadConfig := sriovnetworkv1.OvsHardwareOffloadConfig{
+		OvsConfig: map[string]string{
+			"doca-init":          "true",
+			"hw-offload":         "true",
+			"doca-eswitch-max":   "8",
+			"hw-offload-ct-size": "0",
+		},
+	}
+
+	nodePoolConfig := &sriovnetworkv1.SriovNetworkPoolConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sriovPoolConfigName,
+			Namespace: r.SriovObjNamespace,
+			Labels: map[string]string{
+				spectrumXSRIOVControllerName: "",
+			},
+		},
+		Spec: sriovnetworkv1.SriovNetworkPoolConfigSpec{
+			NodeSelector:             &nodeSelector,
+			OvsHardwareOffloadConfig: ovsHardwareOffloadConfig,
+		},
+	}
+
+	nodePoolConfig.ObjectMeta.ManagedFields = nil
+	nodePoolConfig.SetGroupVersionKind(sriovnetworkv1.GroupVersion.WithKind(sriovPoolConfigType))
+	return nodePoolConfig
 }
 
 // generateSRIOVNetworkNodePolicy generates a SRIOVNetworkNodePolicy object for the given Rail
@@ -223,6 +279,9 @@ func (r *SRIOVReconciler) reconcileDelete(ctx context.Context, cm *corev1.Config
 	if err := r.deleteSRIOVNetworkNodePolicies(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err := r.deleteSRIOVNetworkPoolConfig(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
 	logr.Info("Removing finalizer")
 	controllerutil.RemoveFinalizer(cm, spectrumXSRIOVFinalizer)
 	cm.ObjectMeta.ManagedFields = nil
@@ -247,6 +306,33 @@ func (r *SRIOVReconciler) deleteSRIOVNetworkNodePolicies(ctx context.Context) er
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(sriovnetworkv1.GroupVersion.WithKind(sriovNodePolicyType))
+
+		if err := r.Client.List(ctx, list, client.InNamespace(r.SriovObjNamespace), client.MatchingLabels{
+			spectrumXSRIOVControllerName: "",
+		}); err != nil {
+			return false, fmt.Errorf("error while listing %s: %w", list.GetObjectKind().GroupVersionKind().String(), err)
+		}
+
+		// If no resources remain, deletion is complete
+		return len(list.Items) == 0, nil
+	})
+}
+
+// deleteSRIOVNetworkPoolConfig the SriovNetworkPoolConfig created by controller
+func (r *SRIOVReconciler) deleteSRIOVNetworkPoolConfig(ctx context.Context) error {
+	p := &unstructured.Unstructured{}
+	p.SetGroupVersionKind(sriovnetworkv1.GroupVersion.WithKind(sriovPoolConfigType))
+	if err := r.Client.DeleteAllOf(ctx, p, client.InNamespace(r.SriovObjNamespace), client.MatchingLabels{
+		spectrumXSRIOVControllerName: "",
+	}); err != nil {
+		return fmt.Errorf("error while removing all %s: %w", p.GetObjectKind().GroupVersionKind().String(), err)
+	}
+	// Wait for all instances to be deleted
+	timeout := 30 * time.Second
+	interval := 1 * time.Second
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(sriovnetworkv1.GroupVersion.WithKind(sriovPoolConfigType))
 
 		if err := r.Client.List(ctx, list, client.InNamespace(r.SriovObjNamespace), client.MatchingLabels{
 			spectrumXSRIOVControllerName: "",

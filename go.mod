@@ -141,3 +141,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.5.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/k8snetworkplumbingwg/sriov-network-operator v1.5.1-0.20250406123337-cd029e38821c => github.com/Mellanox/sriov-network-operator v0.0.0-20250416070735-fa04774c983d
