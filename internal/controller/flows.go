@@ -65,6 +65,13 @@ func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail,
 	if err != nil {
 		return fmt.Errorf("failed to get addresses for interface %s: %w", bridge, err)
 	}
+
+	// if we don't have all the addresses assigned we will have partial flows
+	// checking for 2 addresses because we don't have a proper api between the controllers
+	if len(addrs) != 2 {
+		return fmt.Errorf("expected 2 addresses for interface %s, got %s", bridge, addrs)
+	}
+
 	for _, addr := range addrs {
 		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:local"`,
 			bridge, defaultPriority, hostConfigCookie, addr.IP)
