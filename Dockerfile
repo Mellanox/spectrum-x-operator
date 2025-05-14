@@ -46,7 +46,7 @@ RUN apt update && apt install -y \
 WORKDIR /
 COPY --from=builder /workspace/build/manager .
 COPY --from=builder /workspace/build/flowcontroller .
-
+COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
 COPY --from=builder /workspace /src
 

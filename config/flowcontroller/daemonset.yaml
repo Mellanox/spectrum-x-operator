@@ -22,6 +22,20 @@ spec:
       hostNetwork: true
       securityContext:
         runAsNonRoot: false
+      initContainers:
+        - name: copy-rail-cni
+          image: controller:latest
+          command: ["cp", "/railcni", "/hostcni/rail"]
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            runAsGroup: 0
+            capabilities:
+              drop:
+              - "ALL"
+          volumeMounts:
+          - name: host-cni
+            mountPath: /hostcni
       containers:
       - command:
         - /flowcontroller
@@ -86,5 +100,8 @@ spec:
       - name: ovs-systemd-config
         hostPath:
           path: /etc/default/openvswitch-switch
+      - name: host-cni
+        hostPath:
+          path: /opt/cni/bin
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

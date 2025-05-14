@@ -166,6 +166,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 build:  $(BUILDDIR) ## Build manager binary.
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/manager cmd/spectrum-x-manager/main.go
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/flowcontroller cmd/flowscontroller/main.go
+	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/railcni cmd/railcni/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
