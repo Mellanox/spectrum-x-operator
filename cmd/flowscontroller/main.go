@@ -144,18 +144,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.FlowReconciler{
-		NodeName:           Options.NodeName,
-		Client:             mgr.GetClient(),
-		Exec:               &exec.Exec{},
-		ConfigMapNamespace: configMapNamespace,
-		ConfigMapName:      configMapName,
-		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
-		OVSWatcher:         ovsWatcherFlowsController,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Pod")
-		os.Exit(1)
-	}
+	// if err = (&controller.FlowReconciler{
+	// 	NodeName:           Options.NodeName,
+	// 	Client:             mgr.GetClient(),
+	// 	Exec:               &exec.Exec{},
+	// 	ConfigMapNamespace: configMapNamespace,
+	// 	ConfigMapName:      configMapName,
+	// 	Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+	// 	OVSWatcher:         ovsWatcherFlowsController,
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "Pod")
+	// 	os.Exit(1)
+	// }
 
 	if err = (&controller.HostConfigReconciler{
 		NodeName:           Options.NodeName,

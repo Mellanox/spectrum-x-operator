@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/Mellanox/spectrum-x-operator/internal/controller"
+	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
+
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
@@ -33,6 +36,13 @@ type NetConf struct {
 	OVSBridge string `json:"ovsBridge"`
 }
 
+type Args struct {
+	types.CommonArgs
+	// using args that are added by ovs-cni
+	//nolint:stylecheck
+	K8S_POD_UID types.UnmarshallableString
+}
+
 // parseNetConf parses the CNI configuration
 func parseNetConf(data []byte) (*NetConf, error) {
 	conf := &NetConf{}
@@ -43,7 +53,9 @@ func parseNetConf(data []byte) (*NetConf, error) {
 }
 
 type RailCNI struct {
-	Log *slog.Logger
+	Log   *slog.Logger
+	Exec  exec.API
+	Flows controller.FlowsAPI
 }
 
 func (r *RailCNI) Add(args *skel.CmdArgs) error {
@@ -74,8 +86,82 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 		return fmt.Errorf("must be called as chained plugin")
 	}
 
+	vf, err := r.getVF(prevResult)
+	if err != nil {
+		r.Log.Error("railcni add, failed to get vf", "error", err)
+		return err
+	}
+
+	bridge, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", vf))
+	if err != nil {
+		r.Log.Error("railcni add", "error", err)
+		return fmt.Errorf("failed to get bridge to vf %s: %s", vf, err)
+	}
+
+	cniArgs := Args{}
+	if err := types.LoadArgs(args.Args, &cniArgs); err != nil {
+		r.Log.Error("railcni add, failed to load args", "error", err)
+		return fmt.Errorf("failed to load args: %v", err)
+	}
+
+	cookie := controller.GenerateUint64FromString(string(cniArgs.K8S_POD_UID))
+
+	// get pod interface mac
+	podMac, err := r.getPodMac(prevResult)
+	if err != nil {
+		r.Log.Error("railcni add, failed to get pod mac", "error", err)
+		return err
+	}
+
+	if len(prevResult.IPs) != 1 {
+		r.Log.Error("railcni add, expected single ip", "ips", prevResult.IPs)
+		return fmt.Errorf("expected single ip, got %+v", prevResult.IPs)
+	}
+
+	if err := r.Flows.AddPodRailFlowsCNI(cookie, vf, bridge, prevResult.IPs[0].Address.IP.String(), podMac); err != nil {
+		r.Log.Error("railcni add pod flows failed", "error", err)
+		return fmt.Errorf("failed to add pod rail flows: %s", err)
+	}
+
+	r.Log.Info("railcni add completed", "vf", vf)
 	// Return the previous result unchanged
-	return types.PrintResult(prevResult, conf.CNIVersion)
+	return types.PrintResult(prevResult, prevResult.CNIVersion)
+}
+
+func (r *RailCNI) getPodMac(prevResult *current.Result) (string, error) {
+	podMac := ""
+	for _, iface := range prevResult.Interfaces {
+		if iface.Sandbox != "" {
+			podMac = iface.Mac
+			break
+		}
+	}
+
+	if podMac == "" {
+		r.Log.Error("railcni add, failed to get pod mac", "error", "no pod mac found")
+		return podMac, fmt.Errorf("no pod mac found")
+	}
+
+	return podMac, nil
+}
+
+func (r *RailCNI) getVF(prevResult *current.Result) (string, error) {
+	vf := ""
+	// sandbox is the interface inside the pod
+	for _, iface := range prevResult.Interfaces {
+		r.Log.Info("railcni add", "iface", iface.Name)
+		if iface.Sandbox == "" {
+			vf = iface.Name
+			break
+		}
+	}
+
+	if vf == "" {
+		r.Log.Error("railcni add", "error", "no vf found")
+		return "", fmt.Errorf("no vf found")
+	}
+
+	return vf, nil
 }
 
 func (r *RailCNI) Del(args *skel.CmdArgs) error {
