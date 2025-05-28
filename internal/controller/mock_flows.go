@@ -9,7 +9,6 @@ import (
 
 	config "github.com/Mellanox/spectrum-x-operator/pkg/config"
 	gomock "github.com/golang/mock/gomock"
-	v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
 
 // MockFlowsAPI is a mock of FlowsAPI interface.
@@ -50,17 +49,17 @@ func (mr *MockFlowsAPIMockRecorder) AddHostRailFlows(bridge, pf, rail, infraRail
 }
 
 // AddPodRailFlows mocks base method.
-func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *v1.NetworkStatus, bridge, iface string) error {
+func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddPodRailFlows", cookie, rail, cfg, ns, bridge, iface)
+	ret := m.ctrl.Call(m, "AddPodRailFlows", cookie, vf, bridge, podIP, podMAC)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddPodRailFlows indicates an expected call of AddPodRailFlows.
-func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, rail, cfg, ns, bridge, iface interface{}) *gomock.Call {
+func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP, podMAC interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, rail, cfg, ns, bridge, iface)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP, podMAC)
 }
 
 // DeleteBridgeDefaultFlows mocks base method.

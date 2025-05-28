@@ -43,11 +43,9 @@ import (
 type FlowReconciler struct {
 	NodeName string
 	client.Client
-	Exec               exec.API
-	ConfigMapNamespace string
-	ConfigMapName      string
-	Flows              FlowsAPI
-	OVSWatcher         <-chan event.TypedGenericEvent[struct{}]
+	Exec       exec.API
+	Flows      FlowsAPI
+	OVSWatcher <-chan event.TypedGenericEvent[struct{}]
 }
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -118,7 +116,7 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 			continue
 		}
 
-		bridge, err := r.ifaceToBridge(rep, pod.UID)
+		bridge, err := r.repToBridge(rep)
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get bridge for interface %s", ns.Interface))
 			errs = multierr.Append(errs, err)
@@ -132,7 +130,7 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 			continue
 		}
 
-		if err = r.Flows.AddPodRailFlowsCNI(cookie, rep, bridge, ns.IPs[0], ns.Mac); err != nil {
+		if err = r.Flows.AddPodRailFlows(cookie, rep, bridge, ns.IPs[0], ns.Mac); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail %s", ns.Interface))
 			errs = multierr.Append(errs, err)
 			continue
@@ -148,13 +146,7 @@ func (r *FlowReconciler) getIfaceRep(iface string, podUID types.UID) (string, er
 		iface, podUID))
 }
 
-func (r *FlowReconciler) ifaceToBridge(iface string, podUID types.UID) (string, error) {
-	rep, err := r.Exec.Execute(fmt.Sprintf(`ovs-vsctl --no-heading --columns=name find Port `+
-		`external_ids:contIface=%s external_ids:contPodUid=%s`,
-		iface, podUID))
-	if err != nil {
-		return "", err
-	}
+func (r *FlowReconciler) repToBridge(rep string) (string, error) {
 	br, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl iface-to-br %s", rep))
 	if err != nil {
 		return "", err

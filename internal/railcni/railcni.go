@@ -118,7 +118,7 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 		return fmt.Errorf("expected single ip, got %+v", prevResult.IPs)
 	}
 
-	if err := r.Flows.AddPodRailFlowsCNI(cookie, vf, bridge, prevResult.IPs[0].Address.IP.String(), podMac); err != nil {
+	if err := r.Flows.AddPodRailFlows(cookie, vf, bridge, prevResult.IPs[0].Address.IP.String(), podMac); err != nil {
 		r.Log.Error("railcni add pod flows failed", "error", err)
 		return fmt.Errorf("failed to add pod rail flows: %s", err)
 	}
