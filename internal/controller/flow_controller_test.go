@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
 	gomock "github.com/golang/mock/gomock"
@@ -30,6 +31,8 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -349,3 +352,86 @@ var _ = Describe("Pod Controller", func() {
 		})
 	})
 })
+
+
+func validConfig() string {
+	return `{
+		"spectrum-x-networks": {
+		  "cross_rail_subnet": "192.0.0.0/8",
+		  "mtu": 9000,
+		  "rails": [
+			{
+			  "name": "rail-1",
+			  "subnet": "192.0.0.0/11"
+			},
+			{
+			  "name": "rail-2",
+			  "subnet": "192.32.0.0/11"
+			}
+		  ]
+		},
+		"rail_device_mapping": [
+		  {
+			"rail_name": "rail-1",
+			"dev_name": "eth0"
+		  },
+		  {
+			"rail_name": "rail-2",
+			"dev_name": "eth1"
+		  }
+		],
+		"hosts": [
+		  {
+			"host_id": "host-1",
+			"rails": [
+			  {
+				"name": "rail-1",
+				"network": "192.0.0.0/31",
+				"peer_leaf_port_ip": "172.0.0.0"
+			  },
+			  {
+				"name": "rail-2",
+				"network": "192.32.0.0/31",
+				"peer_leaf_port_ip": "172.32.0.0"
+			  }
+			]
+		  },
+		  {
+			"host_id": "host-2",
+			"rails": [
+			  {
+				"name": "rail-1",
+				"network": "192.0.0.2/31",
+				"peer_leaf_port_ip": "172.0.0.2"
+			  },
+			  {
+				"name": "rail-2",
+				"network": "192.32.0.2/31",
+				"peer_leaf_port_ip": "172.32.0.2"
+			  }
+			]
+		  }
+		]
+	  }`
+}
+
+func updateConfigMap(ctx context.Context, ns string, data string) {
+	d := map[string]string{config.ConfigMapKey: data}
+	err := k8sClient.Create(ctx, &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: ns},
+		Data:       d,
+	})
+	if err == nil {
+		return
+	}
+	if apiErrors.IsAlreadyExists(err) {
+		configMap := &corev1.ConfigMap{}
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Name: cmName, Namespace: ns}, configMap)).NotTo(HaveOccurred())
+		configMap.Data = d
+		Expect(k8sClient.Update(
+			ctx, configMap)).NotTo(HaveOccurred())
+	} else {
+		Expect(err).NotTo(HaveOccurred())
+	}
+}

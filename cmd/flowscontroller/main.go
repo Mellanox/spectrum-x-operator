@@ -58,7 +58,6 @@ var Options struct {
 	NodeName string `env:"NODE_NAME"`
 }
 
-//nolint:funlen
 func main() {
 	var metricsAddr string
 	var probeAddr string
@@ -170,17 +169,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.OvsIPaddressReconciler{
-		NodeName:           Options.NodeName,
-		Client:             mgr.GetClient(),
-		Exec:               &exec.Exec{},
-		ConfigMapNamespace: configMapNamespace,
-		ConfigMapName:      configMapName,
-		NetlinkLib:         netlink.New(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "OVS-IP-Address")
-		os.Exit(1)
-	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

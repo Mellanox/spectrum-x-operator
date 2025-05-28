@@ -3,7 +3,6 @@ module github.com/Mellanox/spectrum-x-operator
 go 1.24
 
 require (
-	github.com/Mellanox/nvidia-k8s-ipam v0.3.7
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/containernetworking/cni v1.2.3
 	github.com/golang/mock v1.6.0
