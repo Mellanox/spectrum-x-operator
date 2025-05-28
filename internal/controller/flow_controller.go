@@ -30,7 +30,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -103,21 +102,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, relevantNetworkStatus []netdefv1.NetworkStatus) error {
 	logr := log.FromContext(ctx)
 
-	cfg, err := r.getConfig(ctx)
-	if err != nil {
-		logr.Error(err, "failed to get network config")
-		return err
-	}
-
-	hostConfig, err := r.getHostConfig(cfg)
-	if err != nil {
-		logr.Info("no config for this host", "host", r.NodeName, "error", err)
-		return nil
-	}
-
-	logr.Info(fmt.Sprintf("host confg %v", hostConfig))
-
-	cookie := GenerateUint64FromString(types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String())
+	cookie := GenerateUint64FromString(string(pod.UID))
 
 	if pod.DeletionTimestamp != nil {
 		logr.Info(fmt.Sprintf("pod %s/%s is being deleted, deleting flows", pod.Namespace, pod.Name))
@@ -125,45 +110,30 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 
 	var errs error
 
-	for _, rail := range hostConfig.Rails {
-		bridge, err := getBridgeToRail(&rail, cfg, r.Exec)
+	for _, ns := range relevantNetworkStatus {
+		rep, err := r.getIfaceRep(ns.Interface, pod.UID)
 		if err != nil {
-			logr.Error(err, fmt.Sprintf("failed to get bridge for rail %s", rail))
+			logr.Error(err, fmt.Sprintf("failed to get rep for interface %s", ns.Interface))
 			errs = multierr.Append(errs, err)
 			continue
 		}
 
-		logr.Info(fmt.Sprintf("Found bridge %s ip for rail %s", bridge, rail))
+		bridge, err := r.ifaceToBridge(rep, pod.UID)
+		if err != nil {
+			logr.Error(err, fmt.Sprintf("failed to get bridge for interface %s", ns.Interface))
+			errs = multierr.Append(errs, err)
+			continue
+		}
 
 		if pod.DeletionTimestamp != nil {
 			if err = r.Flows.DeletePodRailFlows(cookie, bridge); err != nil {
-				logr.Error(err, fmt.Sprintf("failed to delete flows for rail %s", rail))
+				logr.Error(err, fmt.Sprintf("failed to delete flows for rail %s", bridge))
 			}
 			continue
 		}
 
-		// make sure there is a pod interface related to this bridge
-		iface, ns, err := r.ifaceToRail(bridge, pod.UID, relevantNetworkStatus)
-		if err != nil {
-			logr.Error(err, fmt.Sprintf("failed to get relevant interface for bridge %s", bridge))
-			errs = multierr.Append(errs, err)
-			continue
-		}
-		if iface == "" {
-			logr.Info(fmt.Sprintf("skipping rail [%s] for bridge [%s], couldn't find matching pod interface", rail, bridge))
-			continue
-		}
-
-		if len(ns.IPs) == 0 {
-			logr.Info(fmt.Sprintf("skipping rail [%s] for bridge [%s],"+
-				"couldn't network inteface don't have ip address", rail, bridge))
-			continue
-		}
-
-		logr.Info(fmt.Sprintf("Found interface [%s] from bridge [%s] for rail [%s]", iface, bridge, rail))
-
-		if err = r.Flows.AddPodRailFlows(cookie, &rail, cfg, ns, bridge, iface); err != nil {
-			logr.Error(err, fmt.Sprintf("failed to add flows to rail [%s]", rail))
+		if err = r.Flows.AddPodRailFlowsCNI(cookie, rep, bridge, ns.IPs[0], ns.Mac); err != nil {
+			logr.Error(err, fmt.Sprintf("failed to add flows to rail %s", ns.Interface))
 			errs = multierr.Append(errs, err)
 			continue
 		}
@@ -172,27 +142,24 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 	return errs
 }
 
-func (r *FlowReconciler) ifaceToRail(bridge string, podUID types.UID, networkStatus []netdefv1.NetworkStatus) (string, *netdefv1.NetworkStatus, error) {
-	var errs error
-	for _, ns := range networkStatus {
-		iface, err := r.Exec.Execute(fmt.Sprintf(`ovs-vsctl --no-heading --columns=name find Port `+
-			`external_ids:contIface=%s external_ids:contPodUid=%s`,
-			ns.Interface, podUID))
-		if err != nil {
-			errs = multierr.Append(errs, err)
-			continue
-		}
-		br, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl iface-to-br %s", iface))
-		if err != nil {
-			errs = multierr.Append(errs, err)
-			continue
-		}
-		if br == bridge {
-			return iface, &ns, nil
-		}
-	}
+func (r *FlowReconciler) getIfaceRep(iface string, podUID types.UID) (string, error) {
+	return r.Exec.Execute(fmt.Sprintf(`ovs-vsctl --no-heading --columns=name find Port `+
+		`external_ids:contIface=%s external_ids:contPodUid=%s`,
+		iface, podUID))
+}
 
-	return "", nil, errs
+func (r *FlowReconciler) ifaceToBridge(iface string, podUID types.UID) (string, error) {
+	rep, err := r.Exec.Execute(fmt.Sprintf(`ovs-vsctl --no-heading --columns=name find Port `+
+		`external_ids:contIface=%s external_ids:contPodUid=%s`,
+		iface, podUID))
+	if err != nil {
+		return "", err
+	}
+	br, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl iface-to-br %s", rep))
+	if err != nil {
+		return "", err
+	}
+	return br, nil
 }
 
 func getRailDevice(railName string, cfg *config.Config) (string, error) {
@@ -216,32 +183,6 @@ func getBridgeToRail(rail *config.HostRail, cfg *config.Config, exec exec.API) (
 	}
 
 	return bridge, nil
-}
-
-func (r *FlowReconciler) getConfig(ctx context.Context) (*config.Config, error) {
-	cfgMap := &corev1.ConfigMap{}
-	logr := log.FromContext(ctx)
-	if err := r.Get(ctx, types.NamespacedName{Namespace: r.ConfigMapNamespace, Name: r.ConfigMapName}, cfgMap); err != nil {
-		logr.Error(err, "failed to get network configmap")
-		return nil, err
-	}
-
-	cfg, err := config.ParseConfig(cfgMap.Data[config.ConfigMapKey])
-	if err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (r *FlowReconciler) getHostConfig(cfg *config.Config) (*config.Host, error) {
-	for _, host := range cfg.Hosts {
-		if host.HostID == r.NodeName {
-			return &host, nil
-		}
-	}
-
-	return nil, fmt.Errorf("missing [%s] host toplogy", r.NodeName)
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -300,42 +241,6 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 			return isPodRelevant(pod)
 		})).
-		Watches(
-			&corev1.ConfigMap{},
-			handler.EnqueueRequestsFromMapFunc(
-				func(ctx context.Context, _ client.Object) []reconcile.Request {
-					pods := &corev1.PodList{}
-					err := r.List(ctx, pods)
-					if err != nil {
-						return nil
-					}
-
-					// Create reconcile requests for the Pods
-					var requests []reconcile.Request
-					for _, pod := range pods.Items {
-						if !isPodRelevant(&pod) {
-							continue
-						}
-						requests = append(requests, reconcile.Request{
-							NamespacedName: client.ObjectKey{
-								Namespace: pod.Namespace,
-								Name:      pod.Name,
-							},
-						})
-					}
-
-					return requests
-				},
-			),
-			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				configMap, ok := obj.(*corev1.ConfigMap)
-				if !ok {
-					return false
-				}
-				return configMap.Name == r.ConfigMapName &&
-					configMap.Namespace == r.ConfigMapNamespace
-			})),
-		).
 		WatchesRawSource(source.Channel(r.OVSWatcher, hostPodMapFunc)).
 		Complete(
 			reconcile.AsReconciler(r.Client, r),
