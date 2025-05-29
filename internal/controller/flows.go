@@ -21,8 +21,11 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
+)
 
-	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+const (
+	railPeerIP = "rail_peer_ip"
+	railUplink = "rail_uplink"
 )
 
 //go:generate ../../bin/mockgen -destination mock_flows.go -source flows.go -package controller
@@ -30,7 +33,7 @@ import (
 type FlowsAPI interface {
 	DeleteBridgeDefaultFlows(bridge string) error
 	AddHostRailFlows(bridge string, pf string, rail config.HostRail, infraRailSubnet string) error
-	AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error
+	AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error
 	DeletePodRailFlows(cookie uint64, bridge string) error
 }
 
@@ -103,17 +106,12 @@ func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail,
 	return nil
 }
 
-func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *config.Config, ns *netdefv1.NetworkStatus, bridge, iface string) error {
-	pf, err := getRailDevice(rail.Name, cfg)
-	if err != nil {
-		return err
-	}
-
+func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error {
 	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0, arp,arp_tpa=${CONTAINER_IP} actions=output:${REP_PORT}"
 	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:%s"`,
-		bridge, defaultPriority, cookie, ns.IPs[0], iface)
+		bridge, defaultPriority, cookie, podIP, vf)
 	if _, err := f.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
+		return fmt.Errorf("failed to add flows to bridge [%s]: %v", bridge, err)
 	}
 
 	link, err := f.NetlinkLib.LinkByName(bridge)
@@ -123,9 +121,27 @@ func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *confi
 
 	bridgeMAC := link.Attrs().HardwareAddr
 
-	torMAC, err := f.getTorMac(rail)
+	torIP, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s %s", bridge, railPeerIP))
 	if err != nil {
-		return fmt.Errorf("failed to get tor mac for rail [%s]: %v", rail, err)
+		return fmt.Errorf("failed to get tor ip for bridge [%s]: %v", bridge, err)
+	}
+
+	if torIP == "" {
+		return fmt.Errorf("tor ip is empty for bridge [%s], set [%s] external_id on the bridge", bridge, railPeerIP)
+	}
+
+	torMAC, err := f.getTorMac(torIP)
+	if err != nil {
+		return fmt.Errorf("failed to get tor mac for bridge [%s]: %v", bridge, err)
+	}
+
+	uplink, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s %s", bridge, railUplink))
+	if err != nil {
+		return fmt.Errorf("failed to get rail uplink for bridge [%s]: %v", bridge, err)
+	}
+
+	if uplink == "" {
+		return fmt.Errorf("uplink is empty for bridge [%s], set [%s] external_id on the bridge", bridge, railUplink)
 	}
 
 	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0,ip,in_port=${REP_PORT},
@@ -133,18 +149,18 @@ func (f *Flows) AddPodRailFlows(cookie uint64, rail *config.HostRail, cfg *confi
 	// setting the priority to avoid conflicts with a more specific flows
 	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,in_port=%s,`+
 		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
-		bridge, defaultPriority/2, cookie, iface, bridgeMAC, torMAC, pf)
+		bridge, defaultPriority/2, cookie, vf, bridgeMAC, torMAC, uplink)
 	if _, err := f.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
+		return fmt.Errorf("failed to add flows to bridge [%s] flow [%s] %v", bridge, flow, err)
 	}
 
 	// ovs-ofctl add-flow -OOpenFlow13 $RAIL_BR "table=0,ip,nw_dst=${CONTAINER_IP},
 	// actions=mod_dl_src=${ROUTER_MAC},mod_dl_dst=${CONTAINER_MAC},dec_ttl, output=${REP_PORT}"
 	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,`+
 		`actions=mod_dl_src=%s,mod_dl_dst=%s,dec_ttl,output:%s"`,
-		bridge, defaultPriority, cookie, ns.IPs[0], bridgeMAC, ns.Mac, iface)
+		bridge, defaultPriority, cookie, podIP, bridgeMAC, podMAC, vf)
 	if _, err := f.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to add flows to rail [%s]: %v", rail, err)
+		return fmt.Errorf("failed to add flows to bridge [%s] flow [%s]: %v", bridge, flow, err)
 	}
 
 	return nil
@@ -156,19 +172,19 @@ func (f *Flows) DeletePodRailFlows(cookie uint64, bridge string) error {
 	return err
 }
 
-func (f *Flows) getTorMac(rail *config.HostRail) (string, error) {
+func (f *Flows) getTorMac(torIP string) (string, error) {
 	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
 	// nsenter --target 1 --net -- ip neighbor | grep 2.0.0.3 | awk '{print $5}'
 	// TODO: check why it always return an error
 	reply, _ := f.Exec.ExecutePrivileged(fmt.Sprintf(`arping %s -c 1 | grep "reply from" | awk '{print $5}' | tr -d '[]'`,
-		rail.PeerLeafPortIP))
+		torIP))
 	// if err != nil {
 	// 	logr.Error(err, fmt.Sprintf("failed to exec: arping %s -c 1", rail.Tor))
 	// 	return "", err
 	// }
 
 	if reply == "" {
-		return "", fmt.Errorf("no reply from arping %s", rail.PeerLeafPortIP)
+		return "", fmt.Errorf("no reply from arping %s", torIP)
 	}
 
 	return reply, nil
