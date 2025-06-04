@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"hash/fnv"
 
-	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -49,7 +48,6 @@ type FlowReconciler struct {
 }
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=pods/finalizers,verbs=update
 //+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
@@ -154,29 +152,6 @@ func (r *FlowReconciler) repToBridge(rep string) (string, error) {
 	return br, nil
 }
 
-func getRailDevice(railName string, cfg *config.Config) (string, error) {
-	for _, mapping := range cfg.RailDeviceMapping {
-		if mapping.RailName == railName {
-			return mapping.DevName, nil
-		}
-	}
-	return "", fmt.Errorf("failed to find device for rail %s", railName)
-}
-
-func getBridgeToRail(rail *config.HostRail, cfg *config.Config, exec exec.API) (string, error) {
-	railDevice, err := getRailDevice(rail.Name, cfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to get rail device for rail %s: %s", rail.Name, err)
-	}
-
-	bridge, err := exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", railDevice))
-	if err != nil {
-		return "", fmt.Errorf("failed to get bridge to rail %s, device %s: %s", rail.Name, railDevice, err)
-	}
-
-	return bridge, nil
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	isPodRelevant := func(pod *corev1.Pod) bool {
@@ -221,11 +196,6 @@ func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("FlowReconciler").
 		For(&corev1.Pod{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
-			// don't ignore config map changes - it may be topology config map
-			if _, ok := object.(*corev1.ConfigMap); ok {
-				return true
-			}
-
 			pod, ok := object.(*corev1.Pod)
 			if !ok {
 				return false

@@ -39,8 +39,6 @@ spec:
       containers:
       - command:
         - /flowcontroller
-        args:
-        - --cm-namespace=$(POD_NAMESPACE)
         image: controller:latest
         name: flowcontroller
         env:

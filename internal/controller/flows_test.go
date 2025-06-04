@@ -72,20 +72,6 @@ var _ = Describe("Flows", func() {
 		ctrl.Finish()
 	})
 
-	Context("DeleteBridgeDefaultFlows", func() {
-		It("should delete flows with cookie=0", func() {
-			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x0/-1").Return("", nil)
-			err := flows.DeleteBridgeDefaultFlows("br-rail1")
-			Expect(err).Should(Succeed())
-		})
-
-		It("should not return error if ovs-ofctl fails", func() {
-			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x0/-1").Return("", fmt.Errorf("failed to delete flows"))
-			err := flows.DeleteBridgeDefaultFlows("br-rail1")
-			Expect(err).Should(Succeed())
-		})
-	})
-
 	Context("AddPodRailFlows", func() {
 		var (
 			mockLink *mock_netlink.MockLink

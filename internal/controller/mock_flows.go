@@ -7,7 +7,6 @@ package controller
 import (
 	reflect "reflect"
 
-	config "github.com/Mellanox/spectrum-x-operator/pkg/config"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -34,20 +33,6 @@ func (m *MockFlowsAPI) EXPECT() *MockFlowsAPIMockRecorder {
 	return m.recorder
 }
 
-// AddHostRailFlows mocks base method.
-func (m *MockFlowsAPI) AddHostRailFlows(bridge, pf string, rail config.HostRail, infraRailSubnet string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddHostRailFlows", bridge, pf, rail, infraRailSubnet)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AddHostRailFlows indicates an expected call of AddHostRailFlows.
-func (mr *MockFlowsAPIMockRecorder) AddHostRailFlows(bridge, pf, rail, infraRailSubnet interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHostRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddHostRailFlows), bridge, pf, rail, infraRailSubnet)
-}
-
 // AddPodRailFlows mocks base method.
 func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error {
 	m.ctrl.T.Helper()
@@ -60,20 +45,6 @@ func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC 
 func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP, podMAC interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP, podMAC)
-}
-
-// DeleteBridgeDefaultFlows mocks base method.
-func (m *MockFlowsAPI) DeleteBridgeDefaultFlows(bridge string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteBridgeDefaultFlows", bridge)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteBridgeDefaultFlows indicates an expected call of DeleteBridgeDefaultFlows.
-func (mr *MockFlowsAPIMockRecorder) DeleteBridgeDefaultFlows(bridge interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteBridgeDefaultFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeleteBridgeDefaultFlows), bridge)
 }
 
 // DeletePodRailFlows mocks base method.

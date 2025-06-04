@@ -63,16 +63,12 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var configMapNamespace string
-	var configMapName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", false,
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&configMapNamespace, "cm-namespace", "default", "Spectrum-x config map namespace")
-	flag.StringVar(&configMapName, "cm-name", "specx-config", "Spectrum-x config map name")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -151,19 +147,6 @@ func main() {
 		OVSWatcher: ovsWatcherFlowsController,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
-		os.Exit(1)
-	}
-
-	if err = (&controller.HostConfigReconciler{
-		NodeName:           Options.NodeName,
-		Client:             mgr.GetClient(),
-		Exec:               &exec.Exec{},
-		ConfigMapNamespace: configMapNamespace,
-		ConfigMapName:      configMapName,
-		Flows:              &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
-		OVSWatcher:         ovsWatcherHostConfig,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HostConfig")
 		os.Exit(1)
 	}
 

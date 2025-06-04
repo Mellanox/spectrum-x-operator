@@ -18,21 +18,19 @@ package controller
 import (
 	"fmt"
 
-	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 )
 
 const (
-	railPeerIP = "rail_peer_ip"
-	railUplink = "rail_uplink"
+	railPeerIP      = "rail_peer_ip"
+	railUplink      = "rail_uplink"
+	defaultPriority = 32768
 )
 
 //go:generate ../../bin/mockgen -destination mock_flows.go -source flows.go -package controller
 
 type FlowsAPI interface {
-	DeleteBridgeDefaultFlows(bridge string) error
-	AddHostRailFlows(bridge string, pf string, rail config.HostRail, infraRailSubnet string) error
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error
 	DeletePodRailFlows(cookie uint64, bridge string) error
 }
@@ -42,68 +40,6 @@ var _ FlowsAPI = &Flows{}
 type Flows struct {
 	Exec       exec.API
 	NetlinkLib libnetlink.NetlinkLib
-}
-
-func (f *Flows) DeleteBridgeDefaultFlows(bridge string) error {
-	// delete normal action flows - creating a secured bridge is not supported with sriov-network-operator
-	// the error is ignored because in non secured bridge there are flows that cannot be deleted, specfically
-	// for cookie=0, the first time will work but second reconcile will fail.
-	// those are the default flows:
-	// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x1 actions=controller(reason=)
-	// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=2,recirc_id=0 actions=drop
-	// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x3 actions=drop
-	// 	cookie=0x0, duration=1297.663s, table=254, n_packets=0, n_bytes=0, priority=0,reg0=0x2 actions=drop
-	// once the bridge is created as secured this code will be removed
-	_, _ = f.Exec.Execute(fmt.Sprintf("ovs-ofctl del-flows %s cookie=0x0/-1", bridge))
-
-	return nil
-}
-
-func (f *Flows) AddHostRailFlows(bridge string, pf string, rail config.HostRail, infraRailSubnet string) error {
-	link, err := f.NetlinkLib.LinkByName(bridge)
-	if err != nil {
-		return fmt.Errorf("failed to get interface %s: %w", bridge, err)
-	}
-	addrs, err := f.NetlinkLib.IPv4Addresses(link)
-	if err != nil {
-		return fmt.Errorf("failed to get addresses for interface %s: %w", bridge, err)
-	}
-
-	// if we don't have all the addresses assigned we will have partial flows
-	// checking for 2 addresses because we don't have a proper api between the controllers
-	if len(addrs) != 2 {
-		return fmt.Errorf("expected 2 addresses for interface %s, got %s", bridge, addrs)
-	}
-
-	for _, addr := range addrs {
-		flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:local"`,
-			bridge, defaultPriority, hostConfigCookie, addr.IP)
-		if _, err := f.Exec.Execute(flow); err != nil {
-			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-		}
-
-		flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,ip,nw_dst=%s,actions=output:local"`,
-			bridge, defaultPriority, hostConfigCookie, addr.IP)
-		if _, err := f.Exec.Execute(flow); err != nil {
-			return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-		}
-	}
-
-	// TOR is the gateway for the outer ip
-	flow := fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,arp,arp_tpa=%s,actions=output:%s"`,
-		bridge, defaultPriority, hostConfigCookie, rail.PeerLeafPortIP, pf)
-	if _, err := f.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-	}
-
-	flow = fmt.Sprintf(`ovs-ofctl add-flow %s "table=0,priority=%d,cookie=0x%x,`+
-		`ip,in_port=local,nw_dst=%s,actions=output:%s"`,
-		bridge, defaultPriority, hostConfigCookie, infraRailSubnet, pf)
-	if _, err := f.Exec.Execute(flow); err != nil {
-		return fmt.Errorf("failed to exec [%s]: %s", flow, err)
-	}
-
-	return nil
 }
 
 func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error {

@@ -28,7 +28,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps
   - pods
   verbs:
   - create
