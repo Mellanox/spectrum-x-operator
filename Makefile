@@ -122,7 +122,6 @@ clean: ## clean files
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -164,14 +163,8 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build:  $(BUILDDIR) ## Build manager binary.
-	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/manager cmd/spectrum-x-manager/main.go
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/flowcontroller cmd/flowscontroller/main.go
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -gcflags="$(GO_GCFLAGS)" -o $(BUILDDIR)/railcni cmd/railcni/main.go
-
-.PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/spectrum-x-manager/main.go
-
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -204,7 +197,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/flowcontroller && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -225,7 +218,6 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	cd config/flowcontroller && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
@@ -235,7 +227,6 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 
 .PHONY: deploy-openshift
 deploy-openshift: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	cd config/flowcontroller && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/openshift | $(KUBECTL) apply -f -
 
@@ -327,7 +318,7 @@ endif
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/flowcontroller && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	$(OPERATOR_SDK) bundle validate ./bundle
 

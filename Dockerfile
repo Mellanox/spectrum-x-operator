@@ -44,7 +44,6 @@ RUN apt update && apt install -y \
     iputils-arping
 
 WORKDIR /
-COPY --from=builder /workspace/build/manager .
 COPY --from=builder /workspace/build/flowcontroller .
 COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
