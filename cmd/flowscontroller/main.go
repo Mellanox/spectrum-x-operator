@@ -29,11 +29,13 @@ import (
 
 	env "github.com/caarlos0/env/v11"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -108,6 +110,14 @@ func main() {
 			BindAddress:   metricsAddr,
 			SecureServing: secureMetrics,
 			TLSOpts:       tlsOpts,
+		},
+		Cache: cache.Options{
+			// To reduce cache memory consumption, only pods on on the same node as the reconciler will be added to the cache:
+			// 1) List calls using the controller Manager client will only return Pods with `spec.nodeName` set to nodeName
+			// 2) Get calls for pods not in the cache will never find the pod.
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}: {Field: fields.SelectorFromSet(map[string]string{"spec.nodeName": Options.NodeName})},
+			},
 		},
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
