@@ -119,6 +119,10 @@ var _ = Describe("RailCNI", func() {
 				Execute("ovs-vsctl port-to-br eth0").
 				Return("br0", nil)
 
+			mockExec.EXPECT().
+				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
+				Return("", nil)
+
 			mockFlows.EXPECT().
 				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2", "aa:bb:cc:dd:ee:ff").
 				Return(nil)
@@ -148,10 +152,28 @@ var _ = Describe("RailCNI", func() {
 			Expect(err.Error()).To(ContainSubstring("failed to get bridge to vf"))
 		})
 
+		It("should return error when failed to set pod external id", func() {
+			mockExec.EXPECT().
+				Execute("ovs-vsctl port-to-br eth0").
+				Return("br0", nil)
+
+			mockExec.EXPECT().
+				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
+				Return("", fmt.Errorf("failed to set pod external id"))
+
+			err := railCNI.Add(args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to set pod external id"))
+		})
+
 		It("should return error when adding pod rail flows fails", func() {
 			mockExec.EXPECT().
 				Execute("ovs-vsctl port-to-br eth0").
 				Return("br0", nil)
+
+			mockExec.EXPECT().
+				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
+				Return("", nil)
 
 			mockFlows.EXPECT().
 				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2", "aa:bb:cc:dd:ee:ff").
@@ -224,6 +246,10 @@ var _ = Describe("RailCNI", func() {
 				Execute("ovs-vsctl port-to-br eth0").
 				Return("br0", nil)
 
+			mockExec.EXPECT().
+				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
+				Return("", nil)
+
 			err = railCNI.Add(args)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("no pod mac found"))
@@ -258,6 +284,10 @@ var _ = Describe("RailCNI", func() {
 			mockExec.EXPECT().
 				Execute("ovs-vsctl port-to-br eth0").
 				Return("br0", nil)
+
+			mockExec.EXPECT().
+				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
+				Return("", nil)
 
 			err = railCNI.Add(args)
 			Expect(err).To(HaveOccurred())

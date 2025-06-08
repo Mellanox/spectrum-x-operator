@@ -104,6 +104,14 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to load args: %v", err)
 	}
 
+	// add pod external id to the bridge - used for cleanup
+	out, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl set bridge %s external_id:%s=%s",
+		bridge, cniArgs.K8S_POD_UID, controller.RailPodID))
+	if err != nil {
+		r.Log.Error("railcni add, failed to set pod external id", "error", err, "output", out)
+		return fmt.Errorf("failed to set pod external id: %s, output: %s", err, out)
+	}
+
 	cookie := controller.GenerateUint64FromString(string(cniArgs.K8S_POD_UID))
 
 	// get pod interface mac
