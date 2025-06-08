@@ -60,3 +60,18 @@ func (mr *MockFlowsAPIMockRecorder) DeletePodRailFlows(cookie, podID interface{}
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeletePodRailFlows), cookie, podID)
 }
+
+// IsBridgeManagedByRailCNI mocks base method.
+func (m *MockFlowsAPI) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsBridgeManagedByRailCNI", bridge, podID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsBridgeManagedByRailCNI indicates an expected call of IsBridgeManagedByRailCNI.
+func (mr *MockFlowsAPIMockRecorder) IsBridgeManagedByRailCNI(bridge, podID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsBridgeManagedByRailCNI", reflect.TypeOf((*MockFlowsAPI)(nil).IsBridgeManagedByRailCNI), bridge, podID)
+}

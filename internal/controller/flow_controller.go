@@ -125,6 +125,18 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 			continue
 		}
 
+		isManaged, err := r.Flows.IsBridgeManagedByRailCNI(bridge, string(pod.UID))
+		if err != nil {
+			logr.Error(err, fmt.Sprintf("failed to check if bridge %s is managed by rail cni", bridge))
+			errs = multierr.Append(errs, err)
+			continue
+		}
+
+		if !isManaged {
+			logr.Info(fmt.Sprintf("skipping bridge [%s], not managed by rail cni", bridge))
+			continue
+		}
+
 		if err = r.Flows.AddPodRailFlows(cookie, rep, bridge, ns.IPs[0], ns.Mac); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail %s", ns.Interface))
 			errs = multierr.Append(errs, err)

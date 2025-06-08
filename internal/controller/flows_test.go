@@ -295,4 +295,30 @@ var _ = Describe("Flows", func() {
 			Expect(err.Error()).Should(ContainSubstring("failed to delete flows"))
 		})
 	})
+
+	Context("IsBridgeManagedByRailCNI", func() {
+		It("should return true if bridge is managed by rail cni", func() {
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("rail_pod_id", nil)
+			isManaged, err := flows.IsBridgeManagedByRailCNI("br-rail1", "test-pod-uid")
+			Expect(err).Should(Succeed())
+			Expect(isManaged).Should(BeTrue())
+		})
+
+		It("should return false if bridge is not managed by rail cni", func() {
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("", nil)
+			isManaged, err := flows.IsBridgeManagedByRailCNI("br-rail1", "test-pod-uid")
+			Expect(err).Should(Succeed())
+			Expect(isManaged).Should(BeFalse())
+		})
+
+		It("should return error if failed to get external id", func() {
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("", fmt.Errorf("failed to get external id"))
+			isManaged, err := flows.IsBridgeManagedByRailCNI("br-rail1", "test-pod-uid")
+			Expect(err).Should(HaveOccurred())
+			Expect(isManaged).Should(BeFalse())
+		})
+	})
 })

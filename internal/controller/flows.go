@@ -37,6 +37,7 @@ const (
 type FlowsAPI interface {
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error
 	DeletePodRailFlows(cookie uint64, podID string) error
+	IsBridgeManagedByRailCNI(bridge, podID string) (bool, error)
 }
 
 var _ FlowsAPI = &Flows{}
@@ -139,6 +140,15 @@ func (f *Flows) DeletePodRailFlows(cookie uint64, podID string) error {
 		}
 	}
 	return errs
+}
+
+func (f *Flows) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
+	out, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s %s", bridge, podID))
+	if err != nil {
+		return false, fmt.Errorf("failed to get external id for bridge %s, output: %s, err: %v", bridge, out, err)
+	}
+
+	return out == RailPodID, nil
 }
 
 func (f *Flows) getTorMac(torIP string) (string, error) {

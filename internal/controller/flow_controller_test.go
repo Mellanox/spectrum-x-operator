@@ -200,6 +200,7 @@ var _ = Describe("Pod Controller", func() {
 				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
 				Return("pod-vf-1", nil).Times(1)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("br-rail1", nil).Times(1)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			// rail2
@@ -207,6 +208,7 @@ var _ = Describe("Pod Controller", func() {
 				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
 				Return("pod-vf-2", nil)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			result, err := flowController.Reconcile(ctx, pod)
@@ -225,6 +227,7 @@ var _ = Describe("Pod Controller", func() {
 				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
 				Return("pod-vf-2", nil)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			result, err := flowController.Reconcile(ctx, pod)
@@ -245,6 +248,7 @@ var _ = Describe("Pod Controller", func() {
 				Return("pod-vf-2", nil)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
 
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 			result, err := flowController.Reconcile(ctx, pod)
 			Expect(err).Should(HaveOccurred())
@@ -257,6 +261,7 @@ var _ = Describe("Pod Controller", func() {
 				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
 				Return("pod-vf-1", nil).Times(1)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("br-rail1", nil).Times(1)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(fmt.Errorf("failed to add flows to rail"))
 
@@ -265,6 +270,7 @@ var _ = Describe("Pod Controller", func() {
 				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
 				Return("pod-vf-2", nil)
 			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 			result, err := flowController.Reconcile(ctx, pod)
@@ -272,5 +278,47 @@ var _ = Describe("Pod Controller", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
+		It("skip when bridge is not managed by rail cni", func() {
+			// rail1
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-1", nil).Times(1)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("br-rail1", nil).Times(1)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
+
+			// rail2
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-2", nil)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
+			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+			result, err := flowController.Reconcile(ctx, pod)
+			Expect(err).Should(Succeed())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
+		It("failed to check if bridge is managed by rail cni", func() {
+			// rail1
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-1", nil).Times(1)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("br-rail1", nil).Times(1)
+			flowsMock.EXPECT().
+				IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).
+				Return(false, fmt.Errorf("failed to check if bridge is managed by rail cni"))
+
+			// rail2
+			execMock.EXPECT().
+				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
+				Return("pod-vf-2", nil)
+			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil)
+			flowsMock.EXPECT().IsBridgeManagedByRailCNI(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
+			flowsMock.EXPECT().AddPodRailFlows(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			result, err := flowController.Reconcile(ctx, pod)
+			Expect(err).Should(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
 	})
 })
