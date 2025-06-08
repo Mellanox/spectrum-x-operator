@@ -48,15 +48,15 @@ func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP, p
 }
 
 // DeletePodRailFlows mocks base method.
-func (m *MockFlowsAPI) DeletePodRailFlows(cookie uint64, bridge string) error {
+func (m *MockFlowsAPI) DeletePodRailFlows(cookie uint64, podID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeletePodRailFlows", cookie, bridge)
+	ret := m.ctrl.Call(m, "DeletePodRailFlows", cookie, podID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeletePodRailFlows indicates an expected call of DeletePodRailFlows.
-func (mr *MockFlowsAPIMockRecorder) DeletePodRailFlows(cookie, bridge interface{}) *gomock.Call {
+func (mr *MockFlowsAPIMockRecorder) DeletePodRailFlows(cookie, podID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeletePodRailFlows), cookie, bridge)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeletePodRailFlows), cookie, podID)
 }

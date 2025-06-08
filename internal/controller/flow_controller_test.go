@@ -167,22 +167,10 @@ var _ = Describe("Pod Controller", func() {
 			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
 
 			pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-
-			// rail1
-			execMock.EXPECT().
-				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net1 external_ids:contPodUid="+string(pod.UID)).
-				Return("pod-vf-1", nil).Times(1)
-			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-1").Return("br-rail1", nil).Times(1)
-
-			// rail2
-			execMock.EXPECT().
-				Execute("ovs-vsctl --no-heading --columns=name find Port external_ids:contIface=net2 external_ids:contPodUid="+string(pod.UID)).
-				Return("pod-vf-2", nil)
-			execMock.EXPECT().Execute("ovs-vsctl iface-to-br pod-vf-2").Return("br-rail2", nil).Times(1)
 		})
 
 		It("delete flows on pod deletion", func() {
-			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 			pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 			result, err := flowController.Reconcile(ctx, pod)
 			Expect(err).Should(Succeed())
@@ -191,7 +179,6 @@ var _ = Describe("Pod Controller", func() {
 
 		It("failed to delete flows on pod deletion - do not fail reconciliation", func() {
 			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(fmt.Errorf("failed to delete flows"))
-			flowsMock.EXPECT().DeletePodRailFlows(gomock.Any(), gomock.Any()).Return(nil)
 			pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 			result, err := flowController.Reconcile(ctx, pod)
 			Expect(err).Should(Succeed())

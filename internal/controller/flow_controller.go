@@ -67,6 +67,14 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) (ctrl.R
 
 	logr.Info("reconcile", "namespace", pod.Namespace, "name", pod.Name)
 
+	if pod.DeletionTimestamp != nil {
+		logr.Info("pod is being deleted, deleting flows if needed")
+		if err := r.Flows.DeletePodRailFlows(GenerateUint64FromString(string(pod.UID)), string(pod.UID)); err != nil {
+			logr.Error(err, "failed to delete flows")
+		}
+		return ctrl.Result{}, nil
+	}
+
 	if pod.Annotations == nil {
 		return reconcile.Result{}, nil
 	}
@@ -100,10 +108,6 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 
 	cookie := GenerateUint64FromString(string(pod.UID))
 
-	if pod.DeletionTimestamp != nil {
-		logr.Info(fmt.Sprintf("pod %s/%s is being deleted, deleting flows", pod.Namespace, pod.Name))
-	}
-
 	var errs error
 
 	for _, ns := range relevantNetworkStatus {
@@ -118,13 +122,6 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 		if err != nil {
 			logr.Error(err, fmt.Sprintf("failed to get bridge for interface %s", ns.Interface))
 			errs = multierr.Append(errs, err)
-			continue
-		}
-
-		if pod.DeletionTimestamp != nil {
-			if err = r.Flows.DeletePodRailFlows(cookie, bridge); err != nil {
-				logr.Error(err, fmt.Sprintf("failed to delete flows for rail %s", bridge))
-			}
 			continue
 		}
 

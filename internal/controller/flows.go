@@ -17,14 +17,18 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
+
+	"go.uber.org/multierr"
 )
 
 const (
 	railPeerIP      = "rail_peer_ip"
 	railUplink      = "rail_uplink"
+	RailPodID       = "rail_pod_id"
 	defaultPriority = 32768
 )
 
@@ -32,7 +36,7 @@ const (
 
 type FlowsAPI interface {
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error
-	DeletePodRailFlows(cookie uint64, bridge string) error
+	DeletePodRailFlows(cookie uint64, podID string) error
 }
 
 var _ FlowsAPI = &Flows{}
@@ -102,10 +106,39 @@ func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string)
 	return nil
 }
 
-func (f *Flows) DeletePodRailFlows(cookie uint64, bridge string) error {
-	flow := fmt.Sprintf(`ovs-ofctl del-flows %s cookie=0x%x/-1`, bridge, cookie)
-	_, err := f.Exec.Execute(flow)
-	return err
+func (f *Flows) DeletePodRailFlows(cookie uint64, podID string) error {
+	out, err := f.Exec.Execute("ovs-vsctl list-br")
+	if err != nil {
+		return fmt.Errorf("failed to list bridges: %v", err)
+	}
+
+	bridges := strings.Split(out, "\n")
+
+	var errs error
+
+	for _, bridge := range bridges {
+		val, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s %s", bridge, podID))
+		if err != nil {
+			errs = multierr.Append(errs, fmt.Errorf("failed to get external id for bridge %s: %v", bridge, err))
+			continue
+		}
+
+		if val == RailPodID {
+			flow := fmt.Sprintf(`ovs-ofctl del-flows %s cookie=0x%x/-1`, bridge, cookie)
+			out, err := f.Exec.Execute(flow)
+			if err != nil {
+				errs = multierr.Append(errs, fmt.Errorf("failed to delete flows for bridge %s: %v, output: %s", bridge, err, out))
+				continue
+			}
+			// clear external id
+			_, err = f.Exec.Execute(fmt.Sprintf(`ovs-vsctl br-set-external-id %s %s ""`, bridge, podID))
+			if err != nil {
+				errs = multierr.Append(errs, fmt.Errorf("failed to clear external id for bridge %s: %v", bridge, err))
+				continue
+			}
+		}
+	}
+	return errs
 }
 
 func (f *Flows) getTorMac(torIP string) (string, error) {

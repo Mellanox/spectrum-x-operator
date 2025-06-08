@@ -23,11 +23,11 @@ import (
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	mock_netlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink/mocks"
-	gomock "github.com/golang/mock/gomock"
-	vishvananda_netlink "github.com/vishvananda/netlink"
 
+	gomock "github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	vishvananda_netlink "github.com/vishvananda/netlink"
 )
 
 type containsSubstringMatcher struct {
@@ -223,15 +223,76 @@ var _ = Describe("Flows", func() {
 
 	Context("DeletePodRailFlows", func() {
 		It("should delete flows on pod deletion", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1\nbr-rail2", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("rail_pod_id", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail2 test-pod-uid").
+				Return("rail_pod_id", nil)
 			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").Return("", nil)
-			err := flows.DeletePodRailFlows(0x5, "br-rail1")
+			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail2 cookie=0x5/-1").Return("", nil)
+			execMock.EXPECT().Execute(`ovs-vsctl br-set-external-id br-rail1 test-pod-uid ""`).Return("", nil)
+			execMock.EXPECT().Execute(`ovs-vsctl br-set-external-id br-rail2 test-pod-uid ""`).Return("", nil)
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
 			Expect(err).Should(Succeed())
 		})
 
-		It("should return error if ovs-ofctl fails", func() {
-			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").Return("", fmt.Errorf("failed to delete flows"))
-			err := flows.DeletePodRailFlows(0x5, "br-rail1")
+		It("should return error if failed to list bridges", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("", fmt.Errorf("failed to list bridges"))
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
 			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to get external id", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().
+				Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("", fmt.Errorf("failed to get external id"))
+
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to delete flows", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+
+			execMock.EXPECT().
+				Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("rail_pod_id", nil)
+
+			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").
+				Return("", fmt.Errorf("failed to delete flows"))
+
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to clear external id", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().
+				Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("rail_pod_id", nil)
+			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").Return("", nil)
+			execMock.EXPECT().
+				Execute(`ovs-vsctl br-set-external-id br-rail1 test-pod-uid ""`).
+				Return("", fmt.Errorf("failed to clear external id"))
+
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to clear external id"))
+		})
+
+		It("should try to delete all flows before returning error", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1\nbr-rail2", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 test-pod-uid").
+				Return("rail_pod_id", fmt.Errorf("failed to get external id"))
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail2 test-pod-uid").
+				Return("rail_pod_id", nil)
+			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail2 cookie=0x5/-1").Return("", fmt.Errorf("failed to delete flows"))
+
+			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to get external id"))
+			Expect(err.Error()).Should(ContainSubstring("failed to delete flows"))
 		})
 	})
 })
