@@ -5,6 +5,7 @@
 package controller
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -45,6 +46,20 @@ func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC 
 func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP, podMAC interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP, podMAC)
+}
+
+// CleanupStaleFlowsForBridges mocks base method.
+func (m *MockFlowsAPI) CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupStaleFlowsForBridges", ctx, existingPodUIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CleanupStaleFlowsForBridges indicates an expected call of CleanupStaleFlowsForBridges.
+func (mr *MockFlowsAPIMockRecorder) CleanupStaleFlowsForBridges(ctx, existingPodUIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupStaleFlowsForBridges", reflect.TypeOf((*MockFlowsAPI)(nil).CleanupStaleFlowsForBridges), ctx, existingPodUIDs)
 }
 
 // DeletePodRailFlows mocks base method.

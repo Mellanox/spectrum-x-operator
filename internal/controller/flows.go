@@ -16,6 +16,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,7 @@ import (
 	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	"go.uber.org/multierr"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -38,6 +40,7 @@ type FlowsAPI interface {
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error
 	DeletePodRailFlows(cookie uint64, podID string) error
 	IsBridgeManagedByRailCNI(bridge, podID string) (bool, error)
+	CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error
 }
 
 var _ FlowsAPI = &Flows{}
@@ -125,21 +128,27 @@ func (f *Flows) DeletePodRailFlows(cookie uint64, podID string) error {
 		}
 
 		if val == RailPodID {
-			flow := fmt.Sprintf(`ovs-ofctl del-flows %s cookie=0x%x/-1`, bridge, cookie)
-			out, err := f.Exec.Execute(flow)
-			if err != nil {
-				errs = multierr.Append(errs, fmt.Errorf("failed to delete flows for bridge %s: %v, output: %s", bridge, err, out))
-				continue
-			}
-			// clear external id
-			_, err = f.Exec.Execute(fmt.Sprintf(`ovs-vsctl br-set-external-id %s %s ""`, bridge, podID))
-			if err != nil {
-				errs = multierr.Append(errs, fmt.Errorf("failed to clear external id for bridge %s: %v", bridge, err))
+			if err := f.cleanBridgeFlows(bridge, podID, cookie); err != nil {
+				errs = multierr.Append(errs, err)
 				continue
 			}
 		}
 	}
 	return errs
+}
+
+func (f *Flows) cleanBridgeFlows(bridge, podID string, cookie uint64) error {
+	flow := fmt.Sprintf("ovs-ofctl del-flows %s cookie=0x%x/-1", bridge, cookie)
+	out, err := f.Exec.Execute(flow)
+	if err != nil {
+		return fmt.Errorf("failed to delete flows for bridge %s: %v, output: %s", bridge, err, out)
+	}
+	// clear external id
+	_, err = f.Exec.Execute(fmt.Sprintf("ovs-vsctl remove bridge %s external_ids %s", bridge, podID))
+	if err != nil {
+		return fmt.Errorf("failed to clear external id for bridge %s: %v", bridge, err)
+	}
+	return nil
 }
 
 func (f *Flows) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
@@ -167,4 +176,69 @@ func (f *Flows) getTorMac(torIP string) (string, error) {
 	}
 
 	return reply, nil
+}
+
+func (f *Flows) CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error {
+	logr := log.FromContext(ctx)
+
+	// List all bridges once
+	out, err := f.Exec.Execute("ovs-vsctl list-br")
+	if err != nil {
+		return fmt.Errorf("failed to list bridges: out: %s, err: %v", out, err)
+	}
+
+	bridges := strings.Split(out, "\n")
+	var errs error
+
+	for _, bridge := range bridges {
+		// Get all external IDs for this bridge once
+		externalIDsOut, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s", bridge))
+		if err != nil {
+			errs = multierr.Append(errs,
+				fmt.Errorf("failed to get external ids for bridge %s: out: %s, err: %v", bridge, externalIDsOut, err))
+			continue
+		}
+
+		// Collect all stale pods for this bridge
+		var stalePods []struct {
+			podID  string
+			cookie uint64
+		}
+
+		// Parse external IDs to find pod IDs managed by rail CNI
+		lines := strings.Split(externalIDsOut, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "="+RailPodID) {
+				// Extract the key part (pod ID) before the =
+				parts := strings.Split(line, "=")
+				if len(parts) >= 2 {
+					podID := parts[0]
+
+					// Check if this pod still exists
+					if !existingPodUIDs[podID] {
+						// Pod doesn't exist, add to cleanup list
+						cookie := GenerateUint64FromString(podID)
+						stalePods = append(stalePods, struct {
+							podID  string
+							cookie uint64
+						}{podID, cookie})
+					}
+				}
+			}
+		}
+
+		if len(stalePods) == 0 {
+			continue
+		}
+
+		for _, stalePod := range stalePods {
+			logr.Info("Cleaning up stale flows for bridge", "bridge", bridge, "podID", stalePod.podID, "cookie", stalePod.cookie)
+			if err := f.cleanBridgeFlows(bridge, stalePod.podID, stalePod.cookie); err != nil {
+				errs = multierr.Append(errs, err)
+				continue
+			}
+		}
+	}
+
+	return errs
 }

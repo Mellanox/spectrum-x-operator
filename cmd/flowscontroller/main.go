@@ -21,8 +21,10 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
+	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
 	"github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
@@ -159,6 +161,14 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		os.Exit(1)
 	}
+
+	staleFlowsCleaner := &staleflows.Cleaner{
+		Client:          mgr.GetClient(),
+		Flows:           &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+		CleanupInterval: 5 * time.Minute,
+	}
+
+	staleFlowsCleaner.StartCleanupRoutine(context.Background())
 
 	//+kubebuilder:scaffold:builder
 

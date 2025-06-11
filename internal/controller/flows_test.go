@@ -17,6 +17,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -230,8 +231,8 @@ var _ = Describe("Flows", func() {
 				Return("rail_pod_id", nil)
 			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").Return("", nil)
 			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail2 cookie=0x5/-1").Return("", nil)
-			execMock.EXPECT().Execute(`ovs-vsctl br-set-external-id br-rail1 test-pod-uid ""`).Return("", nil)
-			execMock.EXPECT().Execute(`ovs-vsctl br-set-external-id br-rail2 test-pod-uid ""`).Return("", nil)
+			execMock.EXPECT().Execute("ovs-vsctl remove bridge br-rail1 external_ids test-pod-uid").Return("", nil)
+			execMock.EXPECT().Execute("ovs-vsctl remove bridge br-rail2 external_ids test-pod-uid").Return("", nil)
 			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
 			Expect(err).Should(Succeed())
 		})
@@ -273,7 +274,7 @@ var _ = Describe("Flows", func() {
 				Return("rail_pod_id", nil)
 			execMock.EXPECT().Execute("ovs-ofctl del-flows br-rail1 cookie=0x5/-1").Return("", nil)
 			execMock.EXPECT().
-				Execute(`ovs-vsctl br-set-external-id br-rail1 test-pod-uid ""`).
+				Execute("ovs-vsctl remove bridge br-rail1 external_ids test-pod-uid").
 				Return("", fmt.Errorf("failed to clear external id"))
 
 			err := flows.DeletePodRailFlows(0x5, "test-pod-uid")
@@ -319,6 +320,73 @@ var _ = Describe("Flows", func() {
 			isManaged, err := flows.IsBridgeManagedByRailCNI("br-rail1", "test-pod-uid")
 			Expect(err).Should(HaveOccurred())
 			Expect(isManaged).Should(BeFalse())
+		})
+	})
+
+	Context("CleanupStaleFlowsForBridges", func() {
+		It("should cleanup stale flows for bridges", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1\nbr-rail2", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1").
+				Return("test-pod-id=rail_pod_id", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail2").
+				Return("test-pod-id=rail_pod_id", nil)
+			execMock.EXPECT().
+				Execute(fmt.Sprintf("ovs-ofctl del-flows br-rail1 cookie=0x%x/-1", GenerateUint64FromString("test-pod-id"))).
+				Return("", nil)
+			execMock.EXPECT().
+				Execute(fmt.Sprintf("ovs-ofctl del-flows br-rail2 cookie=0x%x/-1", GenerateUint64FromString("test-pod-id"))).
+				Return("", nil)
+			execMock.EXPECT().Execute("ovs-vsctl remove bridge br-rail1 external_ids test-pod-id").Return("", nil)
+			execMock.EXPECT().Execute("ovs-vsctl remove bridge br-rail2 external_ids test-pod-id").Return("", nil)
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{})
+			Expect(err).Should(Succeed())
+		})
+
+		It("should return error if failed to list bridges", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("", fmt.Errorf("failed to list bridges"))
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{})
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to get external id", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1").
+				Return("", fmt.Errorf("failed to get external id"))
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{})
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to delete flows", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1").
+				Return("test-pod-id=rail_pod_id", nil)
+			execMock.EXPECT().
+				Execute(fmt.Sprintf("ovs-ofctl del-flows br-rail1 cookie=0x%x/-1", GenerateUint64FromString("test-pod-id"))).
+				Return("", fmt.Errorf("failed to delete flows"))
+
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{})
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should return error if failed to clear external id", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1").
+				Return("test-pod-id=rail_pod_id", nil)
+			execMock.EXPECT().
+				Execute(fmt.Sprintf("ovs-ofctl del-flows br-rail1 cookie=0x%x/-1", GenerateUint64FromString("test-pod-id"))).
+				Return("", nil)
+			execMock.EXPECT().Execute("ovs-vsctl remove bridge br-rail1 external_ids test-pod-id").
+				Return("", fmt.Errorf("failed to clear external id"))
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{})
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should succeed if there are no stale pods", func() {
+			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1", nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1").
+				Return("test-pod-id=rail_pod_id", nil)
+			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{"test-pod-id": true})
+			Expect(err).Should(Succeed())
 		})
 	})
 })
