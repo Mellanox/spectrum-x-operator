@@ -41,6 +41,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
 FROM nvcr.io/nvidia/doca/doca:3.0.0-full-rt-host
 
 RUN apt update && apt install -y \
+    iproute2 \
     iputils-arping
 
 WORKDIR /
