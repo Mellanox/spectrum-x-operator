@@ -76,7 +76,7 @@ func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string)
 
 	torMAC, err := f.getTorMac(torIP)
 	if err != nil {
-		return fmt.Errorf("failed to get tor mac for bridge [%s]: %v", bridge, err)
+		return fmt.Errorf("failed to get tor mac for bridge [%s] reply: %s err: %v", bridge, torMAC, err)
 	}
 
 	uplink, err := f.Exec.Execute(fmt.Sprintf("ovs-vsctl br-get-external-id %s %s", bridge, railUplink))
@@ -162,17 +162,20 @@ func (f *Flows) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
 
 func (f *Flows) getTorMac(torIP string) (string, error) {
 	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
-	// nsenter --target 1 --net -- ip neighbor | grep 2.0.0.3 | awk '{print $5}'
 	// TODO: check why it always return an error
-	reply, _ := f.Exec.ExecutePrivileged(fmt.Sprintf(`arping %s -c 1 | grep "reply from" | awk '{print $5}' | tr -d '[]'`,
-		torIP))
+	_, _ = f.Exec.ExecutePrivileged(fmt.Sprintf(`arping %s -c 1 &> /dev/null`, torIP))
 	// if err != nil {
 	// 	logr.Error(err, fmt.Sprintf("failed to exec: arping %s -c 1", rail.Tor))
 	// 	return "", err
 	// }
 
+	reply, err := f.Exec.ExecutePrivileged(fmt.Sprintf(`ip neighbor | grep %s |  awk '{print $5}'`, torIP))
+	if err != nil {
+		return "", fmt.Errorf("failed to get tor mac for bridge %s: reply: %s, err: %v", torIP, reply, err)
+	}
+
 	if reply == "" {
-		return "", fmt.Errorf("no reply from arping %s", torIP)
+		return "", fmt.Errorf("arp reply not found from arping %s", torIP)
 	}
 
 	return reply, nil
