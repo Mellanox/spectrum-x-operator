@@ -7,7 +7,7 @@ require (
 	github.com/containernetworking/cni v1.3.0
 	github.com/golang/mock v1.6.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
-	github.com/onsi/ginkgo/v2 v2.25.1
+	github.com/onsi/ginkgo/v2 v2.25.2
 	github.com/onsi/gomega v1.38.2
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
