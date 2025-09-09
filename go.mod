@@ -1,6 +1,6 @@
 module github.com/Mellanox/spectrum-x-operator
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/caarlos0/env/v11 v11.3.1
@@ -11,7 +11,7 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
-	golang.org/x/sys v0.35.0
+	golang.org/x/sys v0.36.0
 	k8s.io/api v0.32.8
 	k8s.io/apimachinery v0.32.8
 	k8s.io/client-go v0.32.8
