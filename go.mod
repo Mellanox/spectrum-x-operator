@@ -12,9 +12,9 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
 	golang.org/x/sys v0.36.0
-	k8s.io/api v0.32.8
-	k8s.io/apimachinery v0.32.8
-	k8s.io/client-go v0.32.8
+	k8s.io/api v0.32.9
+	k8s.io/apimachinery v0.32.9
+	k8s.io/client-go v0.32.9
 	sigs.k8s.io/controller-runtime v0.20.4
 )
 
