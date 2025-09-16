@@ -161,21 +161,18 @@ func (f *Flows) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
 }
 
 func (f *Flows) getTorMac(torIP string) (string, error) {
-	// nsenter --target 1 --net -- arping 2.0.0.3 -c 1
-	// TODO: check why it always return an error
-	_, _ = f.Exec.ExecutePrivileged(fmt.Sprintf(`arping %s -c 1 &> /dev/null`, torIP))
-	// if err != nil {
-	// 	logr.Error(err, fmt.Sprintf("failed to exec: arping %s -c 1", rail.Tor))
-	// 	return "", err
-	// }
+	reply, err := f.Exec.ExecutePrivileged(fmt.Sprintf(`ping %s -c 1`, torIP))
+	if err != nil {
+		return "", fmt.Errorf("failed to exec: ping %s -c 1: reply: %s, err: %v", torIP, reply, err)
+	}
 
-	reply, err := f.Exec.ExecutePrivileged(fmt.Sprintf(`ip neighbor | grep %s |  awk '{print $5}'`, torIP))
+	reply, err = f.Exec.ExecutePrivileged(fmt.Sprintf(`ip neighbor | grep %s |  awk '{print $5}'`, torIP))
 	if err != nil {
 		return "", fmt.Errorf("failed to get tor mac for bridge %s: reply: %s, err: %v", torIP, reply, err)
 	}
 
 	if reply == "" {
-		return "", fmt.Errorf("arp reply not found from arping %s", torIP)
+		return "", fmt.Errorf("TOR %s mac not found", torIP)
 	}
 
 	return reply, nil

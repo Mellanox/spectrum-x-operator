@@ -44,7 +44,7 @@ FROM nvcr.io/nvidia/doca/doca:3.1.0-full-rt-host
 
 RUN apt update && apt install -y \
     iproute2 \
-    iputils-arping
+    iputils-ping
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .

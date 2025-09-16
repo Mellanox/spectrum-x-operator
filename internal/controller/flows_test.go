@@ -95,7 +95,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
 
 			// Mock getting TOR MAC
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 
 			// check
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("00:11:22:33:44:55", nil)
@@ -122,7 +122,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("00:11:22:33:44:55", nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("p0", nil)
 			// Second IP flow fails
@@ -138,7 +138,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("00:11:22:33:44:55", nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("p0", nil)
 			// Second IP flow succeeds
@@ -189,7 +189,7 @@ var _ = Describe("Flows", func() {
 			// Then it checks for TOR IP
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
 			// Then it gets TOR MAC
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("00:11:22:33:44:55", nil)
 			// Finally it checks for uplink
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("", nil)
@@ -199,27 +199,40 @@ var _ = Describe("Flows", func() {
 			Expect(err.Error()).Should(ContainSubstring("uplink is empty"))
 		})
 
-		It("should return error if fails to get TOR MAC", func() {
+		It("should return error if fails to ping", func() {
 			// First ARP flow succeeds
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
 			// TOR MAC retrieval fails
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", fmt.Errorf("failed to get TOR MAC"))
-			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("", fmt.Errorf("failed to get TOR MAC"))
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", fmt.Errorf("failed to get TOR MAC"))
 
 			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get tor mac for bridge"))
 		})
 
-		It("should return error if fails to get TOR MAC from arping", func() {
+		It("should return error if fails to get TOR MAC", func() {
 			// First ARP flow succeeds
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
 			// TOR MAC retrieval fails
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", fmt.Errorf("failed to get TOR MAC"))
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("", fmt.Errorf("error"))
+
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to get tor mac for bridge"))
+		})
+
+		It("should return error if fails to get TOR MAC from ping", func() {
+			// First ARP flow succeeds
+			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
+			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
+			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
+			// TOR MAC retrieval fails
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("", nil)
 
 			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
@@ -233,7 +246,7 @@ var _ = Describe("Flows", func() {
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(mockLink, nil)
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("192.168.1.1", nil)
 			// TOR MAC retrieval succeeds
-			execMock.EXPECT().ExecutePrivileged("arping 192.168.1.1 -c 1 &> /dev/null").Return("", nil)
+			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged(gomock.Any()).Return("00:11:22:33:44:55", nil)
 			// Uplink retrieval fails
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("", fmt.Errorf("failed to get uplink"))
