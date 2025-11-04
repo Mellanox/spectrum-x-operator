@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+ARG BASE_IMAGE_DOCA_FULL_RT_HOST
+
 # Build the manager binary
 FROM golang:1.24 AS builder
 ARG TARGETOS
@@ -40,7 +42,7 @@ COPY ./ ./
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
 
-FROM nvcr.io/nvidia/doca/doca:3.1.0-full-rt-host
+FROM ${BASE_IMAGE_DOCA_FULL_RT_HOST:-nvcr.io/nvidia/doca/doca:3.1.0-full-rt-host}
 
 RUN apt update && apt install -y \
     iproute2 \
