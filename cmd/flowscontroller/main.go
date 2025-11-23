@@ -23,6 +23,7 @@ import (
 	"os"
 	"time"
 
+	spectrumxv1alpha1 "github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
@@ -54,7 +55,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
+	utilruntime.Must(spectrumxv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

@@ -10,4 +10,13 @@ plugins:
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: spectrum-x-operator
 repo: github.com/Mellanox/spectrum-x-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: nvidia.com
+  group: spectrumx
+  kind: SpectrumXRailPoolConfig
+  path: github.com/Mellanox/spectrum-x-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

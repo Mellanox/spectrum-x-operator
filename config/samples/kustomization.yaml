@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- spectrumx_v1alpha1_spectrumxrailpoolconfig.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

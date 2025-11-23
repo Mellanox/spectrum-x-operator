@@ -15,7 +15,7 @@ namePrefix: spectrum-x-operator-
 #    someName: someValue
 
 resources:
-#- ../crd
+- ../crd
 - ../rbac
 - ../manager
 - ../flowcontroller
