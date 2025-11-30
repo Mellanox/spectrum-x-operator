@@ -63,6 +63,7 @@ var Options struct {
 	NodeName string `env:"NODE_NAME"`
 }
 
+//nolint:funlen
 func main() {
 	var metricsAddr string
 	var probeAddr string
@@ -170,6 +171,21 @@ func main() {
 	}
 
 	staleFlowsCleaner.StartCleanupRoutine(context.Background())
+
+	if err := (&controller.SpectrumXRailPoolConfigIPAssignerReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
+		os.Exit(1)
+	}
+	if err := (&controller.SpectrumXRailPoolConfigHostFlowsReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
+		os.Exit(1)
+	}
 
 	//+kubebuilder:scaffold:builder
 
