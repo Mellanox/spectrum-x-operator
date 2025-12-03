@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
@@ -80,10 +79,7 @@ var _ = Describe("Flows", func() {
 
 		BeforeEach(func() {
 			mockLink = mock_netlink.NewMockLink(ctrl)
-			linkAttrs := &vishvananda_netlink.LinkAttrs{
-				Name:         "br-rail1",
-				HardwareAddr: net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
-			}
+			linkAttrs := &vishvananda_netlink.LinkAttrs{Name: "br-rail1"}
 			mockLink.EXPECT().Attrs().Return(linkAttrs).AnyTimes()
 		})
 
@@ -106,13 +102,13 @@ var _ = Describe("Flows", func() {
 			// Mock adding flows
 			execMock.EXPECT().Execute(gomock.Any()).Return("", nil).Times(3)
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(Succeed())
 		})
 
 		It("should return error if fails to add arp flow", func() {
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", fmt.Errorf("failed to add arp flow"))
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to add flows to bridge"))
 		})
@@ -128,7 +124,7 @@ var _ = Describe("Flows", func() {
 			// Second IP flow fails
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", fmt.Errorf("failed to add ip flow"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to add flows to bridge"))
 		})
@@ -146,7 +142,7 @@ var _ = Describe("Flows", func() {
 			// Third pod flow fails
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", fmt.Errorf("failed to add pod flow"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to add flows to bridge"))
 		})
@@ -154,7 +150,7 @@ var _ = Describe("Flows", func() {
 		It("should return error if fails to get link", func() {
 			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow br-rail1")).Return("", nil)
 			netlinkMock.EXPECT().LinkByName("br-rail1").Return(nil, fmt.Errorf("failed to get link"))
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get interface"))
 		})
@@ -165,7 +161,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().Execute(matchSubstring("ovs-vsctl br-get-external-id ")).
 				Return("", fmt.Errorf("failed to get external id"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get tor ip for bridge"))
 		})
@@ -177,7 +173,7 @@ var _ = Describe("Flows", func() {
 			// Then it checks for TOR IP
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_peer_ip").Return("", nil)
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("tor ip is empty"))
 		})
@@ -194,7 +190,7 @@ var _ = Describe("Flows", func() {
 			// Finally it checks for uplink
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("", nil)
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("uplink is empty"))
 		})
@@ -207,7 +203,7 @@ var _ = Describe("Flows", func() {
 			// TOR MAC retrieval fails
 			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", fmt.Errorf("failed to get TOR MAC"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get tor mac for bridge"))
 		})
@@ -221,7 +217,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("", fmt.Errorf("error"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get tor mac for bridge"))
 		})
@@ -235,7 +231,7 @@ var _ = Describe("Flows", func() {
 			execMock.EXPECT().ExecutePrivileged("ping 192.168.1.1 -c 1").Return("", nil)
 			execMock.EXPECT().ExecutePrivileged("ip neighbor | grep 192.168.1.1 |  awk '{print $5}'").Return("", nil)
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get tor mac for bridge"))
 		})
@@ -251,7 +247,7 @@ var _ = Describe("Flows", func() {
 			// Uplink retrieval fails
 			execMock.EXPECT().Execute("ovs-vsctl br-get-external-id br-rail1 rail_uplink").Return("", fmt.Errorf("failed to get uplink"))
 
-			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1", "00:11:22:33:44:66")
+			err := flows.AddPodRailFlows(0x5, "vf0", "br-rail1", "10.0.0.1")
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("failed to get rail uplink for bridge"))
 		})

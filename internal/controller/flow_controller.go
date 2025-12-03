@@ -137,7 +137,7 @@ func (r *FlowReconciler) handlePodFlows(ctx context.Context, pod *corev1.Pod, re
 			continue
 		}
 
-		if err = r.Flows.AddPodRailFlows(cookie, rep, bridge, ns.IPs[0], ns.Mac); err != nil {
+		if err = r.Flows.AddPodRailFlows(cookie, rep, bridge, ns.IPs[0]); err != nil {
 			logr.Error(err, fmt.Sprintf("failed to add flows to rail %s", ns.Interface))
 			errs = multierr.Append(errs, err)
 			continue
