@@ -21,17 +21,12 @@ import (
 	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
-	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	"go.uber.org/multierr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const (
-	railPeerIP = "rail_peer_ip"
-	railUplink = "rail_uplink"
-	RailPodID  = "rail_pod_id"
-)
+const RailPodID = "rail_pod_id"
 
 //go:generate ../../bin/mockgen -destination mock_flows.go -source flows.go -package controller
 
@@ -45,8 +40,7 @@ type FlowsAPI interface {
 var _ FlowsAPI = &Flows{}
 
 type Flows struct {
-	Exec       exec.API
-	NetlinkLib libnetlink.NetlinkLib
+	Exec exec.API
 }
 
 func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {

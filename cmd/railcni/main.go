@@ -24,7 +24,6 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/railcni"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
-	"github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/version"
@@ -45,7 +44,7 @@ func main() {
 	railcni := &railcni.RailCNI{
 		Log:   logger,
 		Exec:  &exec.Exec{},
-		Flows: &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+		Flows: &controller.Flows{Exec: &exec.Exec{}},
 	}
 
 	skel.PluginMainFuncs(skel.CNIFuncs{
