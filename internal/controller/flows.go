@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
-	libnetlink "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	"go.uber.org/multierr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -45,8 +44,7 @@ type FlowsAPI interface {
 var _ FlowsAPI = &Flows{}
 
 type Flows struct {
-	Exec       exec.API
-	NetlinkLib libnetlink.NetlinkLib
+	Exec exec.API
 }
 
 func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {
