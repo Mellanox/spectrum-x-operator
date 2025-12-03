@@ -35,17 +35,17 @@ func (m *MockFlowsAPI) EXPECT() *MockFlowsAPIMockRecorder {
 }
 
 // AddPodRailFlows mocks base method.
-func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP, podMAC string) error {
+func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddPodRailFlows", cookie, vf, bridge, podIP, podMAC)
+	ret := m.ctrl.Call(m, "AddPodRailFlows", cookie, vf, bridge, podIP)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddPodRailFlows indicates an expected call of AddPodRailFlows.
-func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP, podMAC interface{}) *gomock.Call {
+func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP, podMAC)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP)
 }
 
 // CleanupStaleFlowsForBridges mocks base method.

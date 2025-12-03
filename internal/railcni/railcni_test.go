@@ -70,12 +70,10 @@ var _ = Describe("RailCNI", func() {
 				Interfaces: []*current.Interface{
 					{
 						Name:    "eth0",
-						Mac:     "00:11:22:33:44:55",
 						Sandbox: "",
 					},
 					{
 						Name:    "eth1",
-						Mac:     "aa:bb:cc:dd:ee:ff",
 						Sandbox: "sandbox",
 					},
 				},
@@ -124,7 +122,7 @@ var _ = Describe("RailCNI", func() {
 				Return("", nil)
 
 			mockFlows.EXPECT().
-				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2", "aa:bb:cc:dd:ee:ff").
+				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2").
 				Return(nil)
 
 			err := railCNI.Add(args)
@@ -176,7 +174,7 @@ var _ = Describe("RailCNI", func() {
 				Return("", nil)
 
 			mockFlows.EXPECT().
-				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2", "aa:bb:cc:dd:ee:ff").
+				AddPodRailFlows(gomock.Any(), "eth0", "br0", "192.168.1.2").
 				Return(fmt.Errorf("failed to add flows"))
 
 			err := railCNI.Add(args)
@@ -189,7 +187,6 @@ var _ = Describe("RailCNI", func() {
 			prevResult.Interfaces = []*current.Interface{
 				{
 					Name:    "eth1",
-					Mac:     "aa:bb:cc:dd:ee:ff",
 					Sandbox: "sandbox",
 				},
 			}
@@ -213,46 +210,6 @@ var _ = Describe("RailCNI", func() {
 			err = railCNI.Add(args)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("no vf found"))
-		})
-
-		It("should return error when no pod MAC is found", func() {
-			// Modify prevResult to have no pod interface
-			prevResult.Interfaces = []*current.Interface{
-				{
-					Name:    "eth0",
-					Mac:     "00:11:22:33:44:55",
-					Sandbox: "",
-				},
-			}
-
-			// Convert prevResult to raw bytes
-			prevResultBytes, err := json.Marshal(prevResult)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Create a map with the prevResult
-			prevResultMap := map[string]interface{}{
-				"cniVersion": "1.0.0",
-				"prevResult": json.RawMessage(prevResultBytes),
-				"ovsBridge":  "br0",
-			}
-
-			// Convert the map to JSON
-			netConfBytes, err := json.Marshal(prevResultMap)
-			Expect(err).NotTo(HaveOccurred())
-			args.StdinData = netConfBytes
-
-			// Setup mock expectations
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
-				Return("br0", nil)
-
-			mockExec.EXPECT().
-				Execute("ovs-vsctl set bridge br0 external_id:test-pod-uid=rail_pod_id").
-				Return("", nil)
-
-			err = railCNI.Add(args)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("no pod mac found"))
 		})
 
 		It("should return error when multiple IPs are present", func() {

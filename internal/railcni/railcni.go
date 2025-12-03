@@ -114,19 +114,12 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 
 	cookie := controller.GenerateUint64FromString(string(cniArgs.K8S_POD_UID))
 
-	// get pod interface mac
-	podMac, err := r.getPodMac(prevResult)
-	if err != nil {
-		r.Log.Error("railcni add, failed to get pod mac", "error", err)
-		return err
-	}
-
 	if len(prevResult.IPs) != 1 {
 		r.Log.Error("railcni add, expected single ip", "ips", prevResult.IPs)
 		return fmt.Errorf("expected single ip, got %+v", prevResult.IPs)
 	}
 
-	if err := r.Flows.AddPodRailFlows(cookie, vf, bridge, prevResult.IPs[0].Address.IP.String(), podMac); err != nil {
+	if err := r.Flows.AddPodRailFlows(cookie, vf, bridge, prevResult.IPs[0].Address.IP.String()); err != nil {
 		r.Log.Error("railcni add pod flows failed", "error", err)
 		return fmt.Errorf("failed to add pod rail flows: %s", err)
 	}
@@ -134,23 +127,6 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 	r.Log.Info("railcni add completed", "vf", vf)
 	// Return the previous result unchanged
 	return types.PrintResult(prevResult, prevResult.CNIVersion)
-}
-
-func (r *RailCNI) getPodMac(prevResult *current.Result) (string, error) {
-	podMac := ""
-	for _, iface := range prevResult.Interfaces {
-		if iface.Sandbox != "" {
-			podMac = iface.Mac
-			break
-		}
-	}
-
-	if podMac == "" {
-		r.Log.Error("railcni add, failed to get pod mac", "error", "no pod mac found")
-		return podMac, fmt.Errorf("no pod mac found")
-	}
-
-	return podMac, nil
 }
 
 func (r *RailCNI) getVF(prevResult *current.Result) (string, error) {

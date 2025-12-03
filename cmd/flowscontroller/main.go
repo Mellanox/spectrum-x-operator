@@ -28,7 +28,6 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
-	"github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	env "github.com/caarlos0/env/v11"
 	corev1 "k8s.io/api/core/v1"
@@ -157,7 +156,7 @@ func main() {
 		NodeName:   Options.NodeName,
 		Client:     mgr.GetClient(),
 		Exec:       &exec.Exec{},
-		Flows:      &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+		Flows:      &controller.Flows{Exec: &exec.Exec{}},
 		OVSWatcher: ovsWatcherFlowsController,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
@@ -166,7 +165,7 @@ func main() {
 
 	staleFlowsCleaner := &staleflows.Cleaner{
 		Client:          mgr.GetClient(),
-		Flows:           &controller.Flows{Exec: &exec.Exec{}, NetlinkLib: netlink.New()},
+		Flows:           &controller.Flows{Exec: &exec.Exec{}},
 		CleanupInterval: 5 * time.Minute,
 	}
 
