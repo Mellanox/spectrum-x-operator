@@ -35,6 +35,7 @@ type FlowsAPI interface {
 	DeletePodRailFlows(cookie uint64, podID string) error
 	IsBridgeManagedByRailCNI(bridge, podID string) (bool, error)
 	CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error
+	GetBridgeNameFromPortName(portName string) (string, error)
 }
 
 var _ FlowsAPI = &Flows{}
@@ -179,4 +180,12 @@ func (f *Flows) CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs
 	}
 
 	return errs
+}
+
+func (f *Flows) GetBridgeNameFromPortName(portName string) (string, error) {
+	out, err := f.Exec.Execute("ovs-vsctl port-to-br " + portName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get bridge name for port %s: %v", portName, err)
+	}
+	return out, nil
 }

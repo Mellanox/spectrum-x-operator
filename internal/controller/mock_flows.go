@@ -76,6 +76,21 @@ func (mr *MockFlowsAPIMockRecorder) DeletePodRailFlows(cookie, podID interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeletePodRailFlows), cookie, podID)
 }
 
+// GetBridgeNameFromPortName mocks base method.
+func (m *MockFlowsAPI) GetBridgeNameFromPortName(portName string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBridgeNameFromPortName", portName)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBridgeNameFromPortName indicates an expected call of GetBridgeNameFromPortName.
+func (mr *MockFlowsAPIMockRecorder) GetBridgeNameFromPortName(portName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBridgeNameFromPortName", reflect.TypeOf((*MockFlowsAPI)(nil).GetBridgeNameFromPortName), portName)
+}
+
 // IsBridgeManagedByRailCNI mocks base method.
 func (m *MockFlowsAPI) IsBridgeManagedByRailCNI(bridge, podID string) (bool, error) {
 	m.ctrl.T.Helper()
