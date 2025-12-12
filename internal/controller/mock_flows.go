@@ -48,6 +48,20 @@ func (mr *MockFlowsAPIMockRecorder) AddPodRailFlows(cookie, vf, bridge, podIP in
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddPodRailFlows), cookie, vf, bridge, podIP)
 }
 
+// AddSoftwareMultiplaneFlows mocks base method.
+func (m *MockFlowsAPI) AddSoftwareMultiplaneFlows(bridgeName string, cookie uint64, pfName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddSoftwareMultiplaneFlows", bridgeName, cookie, pfName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddSoftwareMultiplaneFlows indicates an expected call of AddSoftwareMultiplaneFlows.
+func (mr *MockFlowsAPIMockRecorder) AddSoftwareMultiplaneFlows(bridgeName, cookie, pfName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSoftwareMultiplaneFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddSoftwareMultiplaneFlows), bridgeName, cookie, pfName)
+}
+
 // CleanupStaleFlowsForBridges mocks base method.
 func (m *MockFlowsAPI) CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error {
 	m.ctrl.T.Helper()
@@ -62,6 +76,20 @@ func (mr *MockFlowsAPIMockRecorder) CleanupStaleFlowsForBridges(ctx, existingPod
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupStaleFlowsForBridges", reflect.TypeOf((*MockFlowsAPI)(nil).CleanupStaleFlowsForBridges), ctx, existingPodUIDs)
 }
 
+// DeleteFlowsByCookie mocks base method.
+func (m *MockFlowsAPI) DeleteFlowsByCookie(bridgeName string, cookie uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteFlowsByCookie", bridgeName, cookie)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteFlowsByCookie indicates an expected call of DeleteFlowsByCookie.
+func (mr *MockFlowsAPIMockRecorder) DeleteFlowsByCookie(bridgeName, cookie interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFlowsByCookie", reflect.TypeOf((*MockFlowsAPI)(nil).DeleteFlowsByCookie), bridgeName, cookie)
+}
+
 // DeletePodRailFlows mocks base method.
 func (m *MockFlowsAPI) DeletePodRailFlows(cookie uint64, podID string) error {
 	m.ctrl.T.Helper()
@@ -74,6 +102,21 @@ func (m *MockFlowsAPI) DeletePodRailFlows(cookie uint64, podID string) error {
 func (mr *MockFlowsAPIMockRecorder) DeletePodRailFlows(cookie, podID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePodRailFlows", reflect.TypeOf((*MockFlowsAPI)(nil).DeletePodRailFlows), cookie, podID)
+}
+
+// GetBridgeNameFromPortName mocks base method.
+func (m *MockFlowsAPI) GetBridgeNameFromPortName(portName string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBridgeNameFromPortName", portName)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBridgeNameFromPortName indicates an expected call of GetBridgeNameFromPortName.
+func (mr *MockFlowsAPIMockRecorder) GetBridgeNameFromPortName(portName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBridgeNameFromPortName", reflect.TypeOf((*MockFlowsAPI)(nil).GetBridgeNameFromPortName), portName)
 }
 
 // IsBridgeManagedByRailCNI mocks base method.

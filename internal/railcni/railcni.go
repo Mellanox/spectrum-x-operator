@@ -92,10 +92,10 @@ func (r *RailCNI) Add(args *skel.CmdArgs) error {
 		return err
 	}
 
-	bridge, err := r.Exec.Execute(fmt.Sprintf("ovs-vsctl port-to-br %s", vf))
+	bridge, err := r.Flows.GetBridgeNameFromPortName(vf)
 	if err != nil {
 		r.Log.Error("railcni add", "error", err)
-		return fmt.Errorf("failed to get bridge to vf %s: %s", vf, err)
+		return fmt.Errorf("failed to get bridge name for port %s: %s", vf, err)
 	}
 
 	cniArgs := Args{}

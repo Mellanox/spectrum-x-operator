@@ -30,6 +30,7 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
 
 	env "github.com/caarlos0/env/v11"
+	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -55,6 +56,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(spectrumxv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(sriovv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -132,10 +134,12 @@ func main() {
 
 	ovsWatcherHostConfig := make(chan event.TypedGenericEvent[struct{}])
 	ovsWatcherFlowsController := make(chan event.TypedGenericEvent[struct{}])
+	ovsWatcherHostFlows := make(chan event.GenericEvent)
 
 	filewatcher.WatchFile("/var/run/openvswitch/ovs-vswitchd.pid", func() {
 		ovsWatcherHostConfig <- event.TypedGenericEvent[struct{}]{}
 		ovsWatcherFlowsController <- event.TypedGenericEvent[struct{}]{}
+		ovsWatcherHostFlows <- event.GenericEvent{}
 	}, nil)
 
 	// index pods by node name, used by the FlowReconciler to watch relevant pods
@@ -152,11 +156,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	execAPI := &exec.Exec{}
+	flowsAPI := &controller.Flows{Exec: execAPI}
+
 	if err = (&controller.FlowReconciler{
 		NodeName:   Options.NodeName,
 		Client:     mgr.GetClient(),
-		Exec:       &exec.Exec{},
-		Flows:      &controller.Flows{Exec: &exec.Exec{}},
+		Exec:       execAPI,
+		Flows:      flowsAPI,
 		OVSWatcher: ovsWatcherFlowsController,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
@@ -165,7 +172,7 @@ func main() {
 
 	staleFlowsCleaner := &staleflows.Cleaner{
 		Client:          mgr.GetClient(),
-		Flows:           &controller.Flows{Exec: &exec.Exec{}},
+		Flows:           flowsAPI,
 		CleanupInterval: 5 * time.Minute,
 	}
 
@@ -178,10 +185,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.SpectrumXRailPoolConfigHostFlowsReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+
+	hostFlowsReconciler := controller.NewSpectrumXRailPoolConfigHostFlowsReconciler(
+		mgr.GetClient(),
+		flowsAPI,
+	)
+
+	if err = hostFlowsReconciler.SetupWithManager(mgr, Options.NodeName, ovsWatcherHostFlows); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
 		os.Exit(1)
 	}

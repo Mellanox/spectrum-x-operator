@@ -32,9 +32,12 @@ const RailPodID = "rail_pod_id"
 
 type FlowsAPI interface {
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error
+	AddSoftwareMultiplaneFlows(bridgeName string, cookie uint64, pfName string) error
+	DeleteFlowsByCookie(bridgeName string, cookie uint64) error
 	DeletePodRailFlows(cookie uint64, podID string) error
 	IsBridgeManagedByRailCNI(bridge, podID string) (bool, error)
 	CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs map[string]bool) error
+	GetBridgeNameFromPortName(portName string) (string, error)
 }
 
 var _ FlowsAPI = &Flows{}
@@ -61,6 +64,34 @@ func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {
 		bridge, 16384, cookie, vf)
 	if _, err := f.Exec.Execute(flow); err != nil {
 		return fmt.Errorf("failed to add flows to bridge [%s]: %v", bridge, err)
+	}
+
+	return nil
+}
+
+func (f *Flows) AddSoftwareMultiplaneFlows(bridgeName string, cookie uint64, pfName string) error {
+	// ARP.2
+	flow := fmt.Sprintf("ovs-ofctl add-flow %s \"table=0,cookie=0x%x,priority=16384,arp,actions=output:%s\"", bridgeName, cookie, pfName)
+
+	if _, err := f.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to add ARP flow to bridge %s: %v", bridgeName, err)
+	}
+
+	// IP.1
+	flow = fmt.Sprintf("ovs-ofctl add-flow %s \"table=1,cookie=0x%x,actions=output:%s\"", bridgeName, cookie, pfName)
+
+	if _, err := f.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to add IP flow to bridge %s: %v", bridgeName, err)
+	}
+
+	return nil
+}
+
+func (f *Flows) DeleteFlowsByCookie(bridgeName string, cookie uint64) error {
+	flow := fmt.Sprintf("ovs-ofctl del-flows %s cookie=0x%x/-1", bridgeName, cookie)
+
+	if _, err := f.Exec.Execute(flow); err != nil {
+		return fmt.Errorf("failed to delete flows for bridge %s: %v", bridgeName, err)
 	}
 
 	return nil
@@ -179,4 +210,12 @@ func (f *Flows) CleanupStaleFlowsForBridges(ctx context.Context, existingPodUIDs
 	}
 
 	return errs
+}
+
+func (f *Flows) GetBridgeNameFromPortName(portName string) (string, error) {
+	out, err := f.Exec.Execute("ovs-vsctl port-to-br " + portName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get bridge name for port %s: %v", portName, err)
+	}
+	return out, nil
 }

@@ -113,8 +113,8 @@ var _ = Describe("RailCNI", func() {
 
 		It("should successfully add pod rail flows", func() {
 			// Setup mock expectations
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("br0", nil)
 
 			mockExec.EXPECT().
@@ -130,8 +130,8 @@ var _ = Describe("RailCNI", func() {
 		})
 
 		It("should fail on invalid args", func() {
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("br0", nil)
 
 			args.Args = "invalid"
@@ -141,18 +141,18 @@ var _ = Describe("RailCNI", func() {
 		})
 
 		It("should return error when bridge lookup fails", func() {
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("", fmt.Errorf("bridge lookup failed"))
 
 			err := railCNI.Add(args)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to get bridge to vf"))
+			Expect(err.Error()).To(ContainSubstring("failed to get bridge name"))
 		})
 
 		It("should return error when failed to set pod external id", func() {
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("br0", nil)
 
 			mockExec.EXPECT().
@@ -165,8 +165,8 @@ var _ = Describe("RailCNI", func() {
 		})
 
 		It("should return error when adding pod rail flows fails", func() {
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("br0", nil)
 
 			mockExec.EXPECT().
@@ -238,8 +238,8 @@ var _ = Describe("RailCNI", func() {
 			args.StdinData = netConfBytes
 
 			// Setup mock expectations
-			mockExec.EXPECT().
-				Execute("ovs-vsctl port-to-br eth0").
+			mockFlows.EXPECT().
+				GetBridgeNameFromPortName("eth0").
 				Return("br0", nil)
 
 			mockExec.EXPECT().

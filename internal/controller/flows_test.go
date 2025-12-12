@@ -106,6 +106,53 @@ var _ = Describe("Flows", func() {
 		})
 	})
 
+	Context("AddSoftwareMultiplaneFlows", func() {
+		It("should add flows for software multiplane", func() {
+			gomock.InOrder(
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:pf0"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,actions=output:pf0"`).
+					Return("", nil),
+			)
+			err := flows.AddSoftwareMultiplaneFlows("test-br", uint64(0x1234), "pf0")
+			Expect(err).Should(Succeed())
+		})
+
+		It("should return error if fails to add arp flow", func() {
+			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow test-br")).Return("", fmt.Errorf("failed to add arp flow"))
+			err := flows.AddSoftwareMultiplaneFlows("test-br", uint64(0x1234), "pf0")
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to add ARP flow"))
+		})
+
+		It("should return error if fails to add ip flow", func() {
+			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow test-br")).Return("", nil)
+			execMock.EXPECT().Execute(matchSubstring("ovs-ofctl add-flow test-br")).Return("", fmt.Errorf("failed to add ip flow"))
+			err := flows.AddSoftwareMultiplaneFlows("test-br", uint64(0x1234), "pf0")
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to add IP flow"))
+		})
+	})
+
+	Context("DeleteFlowsByCookie", func() {
+		It("should delete flows by cookie", func() {
+			execMock.EXPECT().Execute("ovs-ofctl del-flows test-br cookie=0x1234/-1").Return("", nil)
+			err := flows.DeleteFlowsByCookie("test-br", uint64(0x1234))
+			Expect(err).Should(Succeed())
+		})
+
+		It("should return error if fails to delete flows", func() {
+			execMock.EXPECT().Execute("ovs-ofctl del-flows test-br cookie=0x1234/-1").Return("", fmt.Errorf("failed to delete flows"))
+			err := flows.DeleteFlowsByCookie("test-br", uint64(0x1234))
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("failed to delete flows"))
+		})
+	})
+
 	Context("DeletePodRailFlows", func() {
 		It("should delete flows on pod deletion", func() {
 			execMock.EXPECT().Execute("ovs-vsctl list-br").Return("br-rail1\nbr-rail2", nil)
@@ -271,6 +318,22 @@ var _ = Describe("Flows", func() {
 				Return("test-pod-id=rail_pod_id", nil)
 			err := flows.CleanupStaleFlowsForBridges(context.Background(), map[string]bool{"test-pod-id": true})
 			Expect(err).Should(Succeed())
+		})
+	})
+
+	Context("GetBridgeNameFromPortName", func() {
+		It("should return bridge name for port name", func() {
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br test-port").Return("br-rail1", nil)
+			bridgeName, err := flows.GetBridgeNameFromPortName("test-port")
+			Expect(err).Should(Succeed())
+			Expect(bridgeName).Should(Equal("br-rail1"))
+		})
+
+		It("should return error if failed to get bridge name", func() {
+			execMock.EXPECT().Execute("ovs-vsctl port-to-br test-port").Return("", fmt.Errorf("failed to get bridge name"))
+			bridgeName, err := flows.GetBridgeNameFromPortName("test-port")
+			Expect(err).Should(HaveOccurred())
+			Expect(bridgeName).Should(BeEmpty())
 		})
 	})
 })
