@@ -26,7 +26,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	spectrumxv1alpha1 "github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
+	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,6 +69,10 @@ var _ = BeforeSuite(func() {
 		// the tests directly. When we run make test it will be setup and used automatically.
 		BinaryAssetsDirectory: filepath.Join("..", "..", "bin", "k8s",
 			fmt.Sprintf("1.32.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			"testdata",
+		},
 	}
 
 	var err error
@@ -74,8 +81,15 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = corev1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	schemeAdders := []func(scheme *k8sruntime.Scheme) error{
+		corev1.AddToScheme,
+		spectrumxv1alpha1.AddToScheme,
+		sriovv1.AddToScheme,
+	}
+
+	for _, schemeAdder := range schemeAdders {
+		Expect(schemeAdder(scheme.Scheme)).To(Succeed())
+	}
 
 	//+kubebuilder:scaffold:scheme
 
