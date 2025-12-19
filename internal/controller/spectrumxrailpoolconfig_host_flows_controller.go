@@ -104,6 +104,16 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 		if err = r.flows.AddSoftwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfName); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add software multiplane flows: %v", err)
 		}
+	case "hwplb":
+		pfNames := sriovNetworkNodePolicy.Spec.NicSelector.PfNames
+
+		if err := r.flows.AddHardwareMultiplaneGroups(bridgeName, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane groups: %v", err)
+		}
+
+		if err = r.flows.AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane flows: %v", err)
+		}
 	default:
 		log.Info("Unhandled multiplane mode", "mode", rpc.Spec.MultiplaneMode)
 		return ctrl.Result{}, nil
