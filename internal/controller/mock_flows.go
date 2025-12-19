@@ -34,6 +34,34 @@ func (m *MockFlowsAPI) EXPECT() *MockFlowsAPIMockRecorder {
 	return m.recorder
 }
 
+// AddHardwareMultiplaneFlows mocks base method.
+func (m *MockFlowsAPI) AddHardwareMultiplaneFlows(bridgeName string, cookie uint64, pfNames []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddHardwareMultiplaneFlows", bridgeName, cookie, pfNames)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddHardwareMultiplaneFlows indicates an expected call of AddHardwareMultiplaneFlows.
+func (mr *MockFlowsAPIMockRecorder) AddHardwareMultiplaneFlows(bridgeName, cookie, pfNames interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHardwareMultiplaneFlows", reflect.TypeOf((*MockFlowsAPI)(nil).AddHardwareMultiplaneFlows), bridgeName, cookie, pfNames)
+}
+
+// AddHardwareMultiplaneGroups mocks base method.
+func (m *MockFlowsAPI) AddHardwareMultiplaneGroups(bridgeName string, pfNames []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddHardwareMultiplaneGroups", bridgeName, pfNames)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddHardwareMultiplaneGroups indicates an expected call of AddHardwareMultiplaneGroups.
+func (mr *MockFlowsAPIMockRecorder) AddHardwareMultiplaneGroups(bridgeName, pfNames interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHardwareMultiplaneGroups", reflect.TypeOf((*MockFlowsAPI)(nil).AddHardwareMultiplaneGroups), bridgeName, pfNames)
+}
+
 // AddPodRailFlows mocks base method.
 func (m *MockFlowsAPI) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {
 	m.ctrl.T.Helper()

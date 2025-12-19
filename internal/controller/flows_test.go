@@ -18,8 +18,11 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"testing/fstest"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
@@ -48,6 +51,21 @@ func (m *containsSubstringMatcher) String() string {
 	return "contains substring " + m.substring
 }
 
+func setupSysClassNetFS() {
+	sysClassNetFS = fstest.MapFS{
+		"test-p0/phys_port_name": &fstest.MapFile{
+			Data: []byte("p0"),
+		},
+		"test-p1/phys_port_name": &fstest.MapFile{
+			Data: []byte("p1"),
+		},
+	}
+}
+
+func resetSysClassNetFS() {
+	sysClassNetFS = os.DirFS("/sys/class/net")
+}
+
 var _ = Describe("Flows", func() {
 	var (
 		flows    *Flows
@@ -63,6 +81,206 @@ var _ = Describe("Flows", func() {
 
 	AfterEach(func() {
 		ctrl.Finish()
+	})
+
+	Context("AddHardwareMultiplaneFlows", func() {
+		BeforeEach(setupSysClassNetFS)
+		AfterEach(resetSysClassNetFS)
+
+		It("should fail if no pf names are provided", func() {
+			err := flows.AddHardwareMultiplaneFlows("test-br", 1234, nil)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("no pf names provided"))
+
+			err = flows.AddHardwareMultiplaneFlows("test-br", 1234, make([]string, 0))
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).Should(ContainSubstring("no pf names provided"))
+		})
+
+		It("should return an error if it could not add the ARP flow", func() {
+			testError := errors.New("test error")
+
+			execMock.
+				EXPECT().
+				Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0,output:test-p1"`).
+				Return("", testError)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0", "test-p1"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal("failed to add arp flow to bridge test-br: test error"))
+		})
+
+		It("should return an error if it could not get the plane ID", func() {
+			execMock.
+				EXPECT().
+				Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:non-existent-pf"`).
+				Return("", nil)
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"non-existent-pf"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get plane id for non-existent-pf"))
+		})
+
+		It("should return an error if it could not add the IP flow", func() {
+			testError := errors.New("test error")
+
+			gomock.InOrder(
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0,output:test-p1"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=0,nv_mp_preferred=1,actions=group:0"`).
+					Return("", testError),
+			)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0", "test-p1"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add IP flow for test-p0 to bridge test-br: test error"))
+		})
+
+		It("should return an error if it could not add the RTT flow", func() {
+			testError := errors.New("test error")
+
+			gomock.InOrder(
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0,output:test-p1"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=0,nv_mp_preferred=1,actions=group:0"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=1,actions=output:test-p0"`).
+					Return("", testError),
+			)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0", "test-p1"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add flow for test-p0 to bridge test-br: test error"))
+		})
+
+		It("should return an error if it could not add the non-RoCE flow", func() {
+			testError := errors.New("test error")
+
+			gomock.InOrder(
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=0,nv_mp_preferred=1,actions=group:0"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=1,actions=output:test-p0"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_preferred=0,actions=group:100"`).
+					Return("", testError),
+			)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add non-RoCE flow to bridge test-br: test error"))
+		})
+
+		It("should add flows for hardware multiplane", func() {
+			gomock.InOrder(
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0,output:test-p1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=0,nv_mp_preferred=1,actions=group:0"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=1,actions=output:test-p0"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=1,nv_mp_strict=0,nv_mp_preferred=1,actions=group:1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=1,nv_mp_strict=1,actions=output:test-p1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_preferred=0,actions=group:100"`).Return("", nil),
+			)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0", "test-p1"})
+			Expect(err).Should(Succeed())
+		})
+	})
+
+	Context("AddHardwareMultiplaneGroups", func() {
+		BeforeEach(setupSysClassNetFS)
+		AfterEach(resetSysClassNetFS)
+
+		It("should return an error if no pf names are provided", func() {
+			err := flows.AddHardwareMultiplaneGroups("test-br", nil)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("no pf names provided"))
+
+			err = flows.AddHardwareMultiplaneGroups("test-br", make([]string, 0))
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("no pf names provided"))
+		})
+
+		It("should return an error if it could not get the plane ID", func() {
+			err := flows.AddHardwareMultiplaneGroups("test-br", []string{"non-existent-pf"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("could not get plane ID for non-existent-pf"))
+		})
+
+		It("should return an error if it fails to add the group for the plane", func() {
+			testError := errors.New("test error")
+
+			execMock.
+				EXPECT().
+				Execute(`ovs-ofctl --may-create mod-group test-br "group_id=0,type=fast_failover,bucket=watch_port=test-p0,actions=output:test-p0,bucket=watch_group=100,actions=group:100"`).
+				Return("", testError)
+
+			err := flows.AddHardwareMultiplaneGroups("test-br", []string{"test-p0"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add group for test-p0 to bridge test-br: test error"))
+		})
+
+		It("should return an error if it fails to add the group for all planes", func() {
+			testError := errors.New("test error")
+
+			gomock.InOrder(
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl --may-create mod-group test-br "group_id=0,type=fast_failover,bucket=watch_port=test-p0,actions=output:test-p0,bucket=watch_group=100,actions=group:100"`).
+					Return("", nil),
+				execMock.
+					EXPECT().
+					Execute(`ovs-ofctl --may-create mod-group test-br "group_id=100,type=select,selection_method=hash,bucket=watch_port=test-p0,actions=output:test-p0"`).
+					Return("", testError),
+			)
+
+			err := flows.AddHardwareMultiplaneGroups("test-br", []string{"test-p0"})
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add group 100 to bridge test-br: test error"))
+		})
+
+		It("should add groups for hardware multiplane", func() {
+			gomock.InOrder(
+				execMock.EXPECT().Execute(
+					`ovs-ofctl --may-create mod-group test-br `+
+						`"group_id=0,type=fast_failover,`+
+						`bucket=watch_port=test-p0,actions=output:test-p0,`+
+						`bucket=watch_group=100,actions=group:100"`,
+				).Return("", nil),
+				execMock.EXPECT().Execute(
+					`ovs-ofctl --may-create mod-group test-br `+
+						`"group_id=1,type=fast_failover,`+
+						`bucket=watch_port=test-p1,actions=output:test-p1,`+
+						`bucket=watch_group=100,actions=group:100"`,
+				).Return("", nil),
+				execMock.EXPECT().Execute(
+					`ovs-ofctl --may-create mod-group test-br `+
+						`"group_id=100,type=select,selection_method=hash,`+
+						`bucket=watch_port=test-p0,actions=output:test-p0,`+
+						`bucket=watch_port=test-p1,actions=output:test-p1"`,
+				).Return("", nil),
+			)
+
+			err := flows.AddHardwareMultiplaneGroups("test-br", []string{"test-p0", "test-p1"})
+			Expect(err).Should(Succeed())
+		})
 	})
 
 	Context("AddPodRailFlows", func() {
@@ -334,6 +552,30 @@ var _ = Describe("Flows", func() {
 			bridgeName, err := flows.GetBridgeNameFromPortName("test-port")
 			Expect(err).Should(HaveOccurred())
 			Expect(bridgeName).Should(BeEmpty())
+		})
+	})
+
+	Context("getPlaneIDFromPfName", func() {
+		AfterEach(resetSysClassNetFS)
+
+		It("should return the plane ID for the pf name", func() {
+			sysClassNetFS = fstest.MapFS{
+				"test-p0/phys_port_name": &fstest.MapFile{
+					Data: []byte("s0"),
+				},
+				"test-p1/phys_port_name": &fstest.MapFile{
+					Data: []byte("p1"),
+				},
+			}
+
+			_, err := getPlaneIDFromPfName("test-p0")
+			Expect(err).To(HaveOccurred())
+
+			var planeID int
+
+			planeID, err = getPlaneIDFromPfName("test-p1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(planeID).Should(Equal(1))
 		})
 	})
 })
