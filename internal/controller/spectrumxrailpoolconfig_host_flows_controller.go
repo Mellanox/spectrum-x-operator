@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
 
@@ -103,6 +104,23 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 	case "none", "swplb":
 		if err = r.flows.AddSoftwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfName); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add software multiplane flows: %v", err)
+		}
+	case "hwplb":
+		pfNames := sriovNetworkNodePolicy.Spec.NicSelector.PfNames
+
+		// TODO: remove when muti-uplink bridges are supported
+		additionalUplinksStr := sriovNetworkNodePolicy.Annotations["spectrumx.nvidia.com/bridge-additional-uplinks"]
+
+		if additionalUplinksStr != "" {
+			pfNames = append(pfNames, strings.Split(additionalUplinksStr, ",")...)
+		}
+
+		if err := r.flows.AddHardwareMultiplaneGroups(bridgeName, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane groups: %v", err)
+		}
+
+		if err = r.flows.AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane flows: %v", err)
 		}
 	default:
 		log.Info("Unhandled multiplane mode", "mode", rpc.Spec.MultiplaneMode)

@@ -158,41 +158,6 @@ var _ = Describe("SpectrumXRailPoolConfigHostFlowsReconciler", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("should do nothing if the multiplane mode is not supported", func() {
-		rpc := &v1alpha1.SpectrumXRailPoolConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      rpcName,
-				Namespace: ns.Name,
-			},
-			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
-				SriovNetworkNodePolicyRef: snnpName,
-				MultiplaneMode:            "hwplb",
-				CidrPoolRef:               "test-cidr-pool",
-			},
-		}
-
-		snnp := &sriovv1.SriovNetworkNodePolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      snnpName,
-				Namespace: ns.Name,
-			},
-			Spec: sriovv1.SriovNetworkNodePolicySpec{
-				NicSelector: sriovv1.SriovNetworkNicSelector{
-					PfNames: []string{pfName},
-				},
-				NodeSelector: make(map[string]string),
-			},
-		}
-
-		Expect(k8sClient.Create(ctx, rpc)).Should(Succeed())
-		Expect(k8sClient.Create(ctx, snnp)).Should(Succeed())
-
-		flowsMock.EXPECT().GetBridgeNameFromPortName(pfName)
-
-		_, err := controller.Reconcile(ctx, rpc)
-		Expect(err).NotTo(HaveOccurred())
-	})
-
 	It("should add the software multiplane flows", func() {
 		rpc := &v1alpha1.SpectrumXRailPoolConfig{
 			ObjectMeta: metav1.ObjectMeta{
@@ -307,6 +272,128 @@ var _ = Describe("SpectrumXRailPoolConfigHostFlowsReconciler", func() {
 		_, err := controller.Reconcile(ctx, rpc)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("failed to add software multiplane flows: failed to add software multiplane flows"))
+	})
+
+	It("should add the hardware multiplane groups andflows", func() {
+		rpc := &v1alpha1.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rpcName,
+				Namespace: ns.Name,
+			},
+			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
+				SriovNetworkNodePolicyRef: snnpName,
+				MultiplaneMode:            "hwplb",
+				CidrPoolRef:               "test-cidr-pool",
+			},
+		}
+
+		snnp := &sriovv1.SriovNetworkNodePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      snnpName,
+				Namespace: ns.Name,
+				Annotations: map[string]string{
+					"spectrumx.nvidia.com/bridge-additional-uplinks": "test-pf2,test-pf3",
+				},
+			},
+			Spec: sriovv1.SriovNetworkNodePolicySpec{
+				NicSelector: sriovv1.SriovNetworkNicSelector{
+					PfNames: []string{pfName},
+				},
+				NodeSelector: make(map[string]string),
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, snnp)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, rpc)).Should(Succeed())
+
+		flowsMock.EXPECT().GetBridgeNameFromPortName(pfName).Return(bridgeName, nil)
+		flowsMock.EXPECT().AddHardwareMultiplaneGroups(bridgeName, []string{pfName, "test-pf2", "test-pf3"}).Return(nil)
+		flowsMock.EXPECT().AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, []string{pfName, "test-pf2", "test-pf3"}).Return(nil)
+
+		_, err := controller.Reconcile(ctx, rpc)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should return an error if fails to add hardware multiplane groups", func() {
+		rpc := &v1alpha1.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rpcName,
+				Namespace: ns.Name,
+			},
+			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
+				SriovNetworkNodePolicyRef: snnpName,
+				MultiplaneMode:            "hwplb",
+				CidrPoolRef:               "test-cidr-pool",
+			},
+		}
+
+		snnp := &sriovv1.SriovNetworkNodePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      snnpName,
+				Namespace: ns.Name,
+			},
+			Spec: sriovv1.SriovNetworkNodePolicySpec{
+				NicSelector: sriovv1.SriovNetworkNicSelector{
+					PfNames: []string{pfName},
+				},
+				NodeSelector: make(map[string]string),
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, snnp)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, rpc)).Should(Succeed())
+
+		gomock.InOrder(
+			flowsMock.EXPECT().GetBridgeNameFromPortName(pfName).Return(bridgeName, nil),
+			flowsMock.
+				EXPECT().
+				AddHardwareMultiplaneGroups(bridgeName, []string{pfName}).
+				Return(errors.New("test error")),
+		)
+
+		_, err := controller.Reconcile(ctx, rpc)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("failed to add hardware multiplane groups: test error"))
+	})
+
+	It("should return an error if fails to add hardware multiplane flows", func() {
+		rpc := &v1alpha1.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rpcName,
+				Namespace: ns.Name,
+			},
+			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
+				SriovNetworkNodePolicyRef: snnpName,
+				MultiplaneMode:            "hwplb",
+				CidrPoolRef:               "test-cidr-pool",
+			},
+		}
+
+		snnp := &sriovv1.SriovNetworkNodePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      snnpName,
+				Namespace: ns.Name,
+			},
+			Spec: sriovv1.SriovNetworkNodePolicySpec{
+				NicSelector: sriovv1.SriovNetworkNicSelector{
+					PfNames: []string{pfName},
+				},
+				NodeSelector: make(map[string]string),
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, snnp)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, rpc)).Should(Succeed())
+
+		gomock.InOrder(
+			flowsMock.EXPECT().GetBridgeNameFromPortName(pfName).Return(bridgeName, nil),
+			flowsMock.EXPECT().AddHardwareMultiplaneGroups(bridgeName, []string{pfName}).Return(nil),
+			flowsMock.EXPECT().AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, []string{pfName}).Return(errors.New("test error")),
+		)
+
+		_, err := controller.Reconcile(ctx, rpc)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("failed to add hardware multiplane flows: test error"))
 	})
 })
 

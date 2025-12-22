@@ -17,7 +17,9 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
@@ -26,11 +28,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const RailPodID = "rail_pod_id"
+const (
+	GroupIdAllPlanes = 100
+	RailPodID        = "rail_pod_id"
+)
 
 //go:generate ../../bin/mockgen -destination mock_flows.go -source flows.go -package controller
 
 type FlowsAPI interface {
+	AddHardwareMultiplaneFlows(bridgeName string, cookie uint64, pfNames []string) error
+	AddHardwareMultiplaneGroups(bridgeName string, pfNames []string) error
 	AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error
 	AddSoftwareMultiplaneFlows(bridgeName string, cookie uint64, pfName string) error
 	DeleteFlowsByCookie(bridgeName string, cookie uint64) error
@@ -40,10 +47,104 @@ type FlowsAPI interface {
 	GetBridgeNameFromPortName(portName string) (string, error)
 }
 
-var _ FlowsAPI = &Flows{}
+var (
+	_             FlowsAPI = &Flows{}
+	sysClassNetFS          = os.DirFS("/sys/class/net")
+)
 
 type Flows struct {
 	Exec exec.API
+}
+
+func getPlaneIDFromPfName(pfName string) (int, error) {
+	fd, err := sysClassNetFS.Open(fmt.Sprintf("%s/phys_port_name", pfName))
+	if err != nil {
+		return 0, fmt.Errorf("failed to open %s: %v", pfName, err)
+	}
+	defer fd.Close()
+
+	var pid int
+
+	if _, err = fmt.Fscanf(fd, "p%d", &pid); err != nil {
+		return 0, fmt.Errorf("failed to read %s: %v", pfName, err)
+	}
+
+	return pid, nil
+}
+
+func (f *Flows) AddHardwareMultiplaneFlows(bridgeName string, cookie uint64, pfNames []string) error {
+	if len(pfNames) == 0 {
+		return errors.New("no pf names provided")
+	}
+
+	// ARP.2
+	flow := fmt.Sprintf("table=0,cookie=0x%x,priority=16384,arp,actions=output:%s", cookie, pfNames[0])
+
+	for _, pfName := range pfNames[1:] {
+		flow += ",output:" + pfName
+	}
+
+	if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-flow %s \"%s\"", bridgeName, flow)); err != nil {
+		return fmt.Errorf("failed to add arp flow for %s to bridge %s: %v", pfNames[0], bridgeName, err)
+	}
+
+	for _, pfName := range pfNames {
+		planeID, err := getPlaneIDFromPfName(pfName)
+		if err != nil {
+			return fmt.Errorf("failed to get plane id for %s: %v", pfName, err)
+		}
+
+		// IP.1
+		flow = fmt.Sprintf("table=1,cookie=0x%x,nv_mp_pid=%d,nv_mp_strict=0,nv_mp_preferred=1,actions=group:%d", cookie, planeID, planeID)
+		if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-flow %s \"%s\"", bridgeName, flow)); err != nil {
+			return fmt.Errorf("failed to add IP flow for %s to bridge %s: %v", pfName, bridgeName, err)
+		}
+
+		// RTT rules (RTT CC workaround flows)
+		tp_src_base := 10000
+		flow = fmt.Sprintf("table=1,cookie=0x%x,nv_mp_pid=%d,nv_mp_strict=1,actions=mod_tp_src=%d,output:%s", cookie, planeID, tp_src_base+planeID, pfName)
+		if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-flow %s \"%s\"", bridgeName, flow)); err != nil {
+			return fmt.Errorf("failed to add flow for %s to bridge %s: %v", pfName, bridgeName, err)
+		}
+	}
+
+	// IP.1b
+	flow = fmt.Sprintf("table=1,nv_mp_preferred=0,actions=group:%d", GroupIdAllPlanes)
+
+	if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-flow %s \"%s\"", bridgeName, flow)); err != nil {
+		return fmt.Errorf("failed to add non-RoCE flow to bridge %s: %v", bridgeName, err)
+	}
+
+	return nil
+}
+
+func (f *Flows) AddHardwareMultiplaneGroups(bridgeName string, pfNames []string) error {
+	for _, pfName := range pfNames {
+		planeID, err := getPlaneIDFromPfName(pfName)
+		if err != nil {
+			return fmt.Errorf("could not get plane ID for %s: %v", pfName, err)
+		}
+
+		group := fmt.Sprintf("group_id=%d,type=fast_failover,", planeID)
+		group += fmt.Sprintf("bucket=watch_port=%s,actions=output:%s,", pfName, pfName)
+		group += fmt.Sprintf("bucket=watch_group=%d,actions=group:%d", GroupIdAllPlanes, GroupIdAllPlanes)
+
+		if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-group %s \"%s\"", bridgeName, group)); err != nil {
+			return fmt.Errorf("failed to add group for %s to bridge %s: %v", pfName, bridgeName, err)
+		}
+	}
+
+	// All planes
+	group := fmt.Sprintf("group_id=%d,type=select,selection_method=hash", GroupIdAllPlanes)
+	for _, pfName := range pfNames {
+		group += fmt.Sprintf(",bucket=watch_port=%s,actions=output:%s", pfName, pfName)
+	}
+
+	if _, err := f.Exec.Execute(fmt.Sprintf("ovs-ofctl add-group %s \"%s\"", bridgeName, group)); err != nil {
+		return fmt.Errorf("failed to add group %d to bridge %s: %v", GroupIdAllPlanes, bridgeName, err)
+	}
+
+	return nil
 }
 
 func (f *Flows) AddPodRailFlows(cookie uint64, vf, bridge, podIP string) error {
