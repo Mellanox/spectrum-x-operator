@@ -132,12 +132,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	ovsWatcherHostConfig := make(chan event.TypedGenericEvent[struct{}])
 	ovsWatcherFlowsController := make(chan event.TypedGenericEvent[struct{}])
 	ovsWatcherHostFlows := make(chan event.GenericEvent)
 
 	filewatcher.WatchFile("/var/run/openvswitch/ovs-vswitchd.pid", func() {
-		ovsWatcherHostConfig <- event.TypedGenericEvent[struct{}]{}
 		ovsWatcherFlowsController <- event.TypedGenericEvent[struct{}]{}
 		ovsWatcherHostFlows <- event.GenericEvent{}
 	}, nil)
