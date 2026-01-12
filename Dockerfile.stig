@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG BASE_IMAGE_DOCA_FULL_RT_HOST
+ARG UBUNTU_STIG_BASE_IMAGE
 
 # Build the manager binary
 FROM golang:1.24 AS builder
@@ -42,20 +42,23 @@ COPY ./ ./
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
 
-FROM ${BASE_IMAGE_DOCA_FULL_RT_HOST:-nvcr.io/nvidia/doca/doca:3.1.0-full-rt-host}
+FROM $UBUNTU_STIG_BASE_IMAGE
 
 RUN apt update && apt install -y \
     iproute2 \
-    iputils-ping
+    iputils-ping \
+    openvswitch-switch \
+    openvswitch-common
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
 COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
 COPY --from=builder /workspace /src
-COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator/build/_output/cmd/sriov-network-config-daemon /usr/bin/
 
 USER 65532:65532
+
+RUN --mount=type=secret,id=stig_script,target=/tmp/stig-fixer.sh bash /tmp/stig-fixer.sh
 
 ENTRYPOINT ["/flowcontroller"]
 
