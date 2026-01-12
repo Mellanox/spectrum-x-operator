@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"testing/fstest"
 
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 
@@ -63,6 +64,61 @@ var _ = Describe("Flows", func() {
 
 	AfterEach(func() {
 		ctrl.Finish()
+	})
+
+	Context("AddHardwareMultiplaneFlows", func() {
+		BeforeEach(func() {
+			sysClassNetFS = fstest.MapFS{
+				"test-p0/phys_port_name": &fstest.MapFile{
+					Data: []byte("p0"),
+				},
+				"test-p1/phys_port_name": &fstest.MapFile{
+					Data: []byte("p1"),
+				},
+			}
+		})
+
+		It("should add flows for hardware multiplane", func() {
+			gomock.InOrder(
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=0,cookie=0x1234,priority=16384,arp,actions=output:test-p0,output:test-p1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=0,nv_mp_preferred=1,actions=group:0"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=0,nv_mp_strict=1,actions=mod_tp_src=10000,output:test-p0"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=1,nv_mp_strict=0,nv_mp_preferred=1,actions=group:1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,cookie=0x1234,nv_mp_pid=1,nv_mp_strict=1,actions=mod_tp_src=10001,output:test-p1"`).Return("", nil),
+				execMock.EXPECT().Execute(`ovs-ofctl add-flow test-br "table=1,nv_mp_preferred=0,actions=group:100"`).Return("", nil),
+			)
+
+			err := flows.AddHardwareMultiplaneFlows("test-br", uint64(0x1234), []string{"test-p0", "test-p1"})
+			Expect(err).Should(Succeed())
+		})
+	})
+
+	Context("AddHardwareMultiplaneGroups", func() {
+		It("should add groups for hardware multiplane", func() {
+			gomock.InOrder(
+				execMock.EXPECT().Execute(
+					`ovs-ofctl add-group test-br `+
+						`"group_id=0,type=fast_failover,`+
+						`bucket=watch_port=test-p0,actions=output:test-p0,`+
+						`bucket=watch_group=100,actions=group:100"`,
+				).Return("", nil),
+				execMock.EXPECT().Execute(
+					`ovs-ofctl add-group test-br `+
+						`"group_id=1,type=fast_failover,`+
+						`bucket=watch_port=test-p1,actions=output:test-p1,`+
+						`bucket=watch_group=100,actions=group:100"`,
+				).Return("", nil),
+				execMock.EXPECT().Execute(
+					`ovs-ofctl add-group test-br `+
+						`"group_id=100,type=select,selection_method=hash,`+
+						`bucket=watch_port=test-p0,actions=output:test-p0,`+
+						`bucket=watch_port=test-p1,actions=output:test-p1"`,
+				).Return("", nil),
+			)
+
+			err := flows.AddHardwareMultiplaneGroups("test-br", []string{"test-p0", "test-p1"})
+			Expect(err).Should(Succeed())
+		})
 	})
 
 	Context("AddPodRailFlows", func() {
