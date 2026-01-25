@@ -51,6 +51,10 @@ RUN apt update -o Acquire::AllowInsecureRepositories=true || true && apt install
     iproute2 \
     iputils-ping
 
+# Remove DOCA-Host unneeded collectx packages from base image
+RUN dpkg --purge collectx || apt-get remove --purge -y collectx || true && \
+    rm -f /usr/share/doca-host-*/repo/pool/collectx*.deb
+
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
 COPY --from=builder /workspace/build/railcni .
