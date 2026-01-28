@@ -84,9 +84,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 		return ctrl.Result{}, fmt.Errorf("expected 1 PF name in SriovNetworkNodePolicy, got %d", len(sriovNetworkNodePolicy.Spec.NicSelector.PfNames))
 	}
 
+	var (
+		bridgeName string
+		err        error
+	)
+
 	pfName := sriovNetworkNodePolicy.Spec.NicSelector.PfNames[0]
 
-	bridgeName, err := r.flows.GetBridgeNameFromPortName(pfName)
+	bridgeName, err = r.flows.GetBridgeNameFromPortName(pfName)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get bridge name for port %s: %v", pfName, err)
 	}
@@ -101,8 +106,22 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 
 	switch rpc.Spec.MultiplaneMode {
 	case "none", "swplb":
-		if err = r.flows.AddSoftwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfName); err != nil {
+		if err = r.flows.AddSoftwareMultiplaneFlows(
+			bridgeName,
+			hostFlowsCookie,
+			sriovNetworkNodePolicy.Spec.NicSelector.PfNames[0],
+		); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add software multiplane flows: %v", err)
+		}
+	case "hwplb":
+		pfNames := sriovNetworkNodePolicy.Spec.NicSelector.PfNames
+
+		if err := r.flows.AddHardwareMultiplaneGroups(bridgeName, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane groups: %v", err)
+		}
+
+		if err = r.flows.AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfNames); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add hardware multiplane flows: %v", err)
 		}
 	default:
 		log.Info("Unhandled multiplane mode", "mode", rpc.Spec.MultiplaneMode)
