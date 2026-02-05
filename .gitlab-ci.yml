@@ -137,16 +137,17 @@ build-operator-stig-image:
     - echo "OPERATOR_IMAGE=$DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$UBUNTU_DOCKER_TAG" | tee -a build.env
     # build operator image (RHEL)
     - |
-      echo "$RH_USERNAME" > rh_username
-      echo "$RH_PASSWORD" > rh_password
+      echo "$RH_USERNAME" > /tmp/rh_username
+      echo "$RH_PASSWORD" > /tmp/rh_password
       docker build \
-        --secret id=rh_username,src=rh_username \
-        --secret id=rh_password,src=rh_password \
+        --secret id=rh_username,src=/tmp/rh_username \
+        --secret id=rh_password,src=/tmp/rh_password \
         --build-arg GOPROXY=$GOPROXY \
         --build-arg RHEL_STIG_BASE_IMAGE=$RHEL_STIG_BASE_IMAGE \
         --file      Dockerfile.stig-rhel \
         --tag       $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG \
         .
+      rm /tmp/rh_username /tmp/rh_password
     # push (RHEL)
     - docker push $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG
     - echo "RHEL_OPERATOR_IMAGE=$DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG" | tee -a build.env
