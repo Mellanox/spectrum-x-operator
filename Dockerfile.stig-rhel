@@ -45,6 +45,8 @@ RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build && \
 
 FROM $RHEL_STIG_BASE_IMAGE
 
+ARG CVE_UPDATES_RHEL
+
 RUN dnf update -y && \
     dnf install -y iproute iputils && \
     dnf clean all
@@ -61,6 +63,11 @@ RUN --mount=type=secret,id=rh_username \
     subscription-manager unregister && \
     which ovs-vsctl && which ovs-ofctl && \
     dnf clean all
+
+RUN if [ -n "${CVE_UPDATES_RHEL}" ]; then \
+        dnf update -y ${CVE_UPDATES_RHEL} && \
+        dnf clean all; \
+    fi
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
