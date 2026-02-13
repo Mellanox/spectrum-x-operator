@@ -31,6 +31,7 @@ variables: # additional variables defined at the gitlab group scope
   DOCKER_REGISTRY: nvcr.io/nvstaging/mellanox
   OPERATOR_IMAGE_NAME: spectrum-x-operator-stig-fips
   GOV_READY_POLICY_FILE_PATH: pulse-scan-policies/prodsec_approved_govready_release_policy.json
+  CVE_UPDATES_RHEL: "openssl python3-urllib3"
 
 # Common job template for building STIG images
 .build-stig-image:
@@ -144,6 +145,7 @@ build-operator-stig-image:
         --secret id=rh_password,src=/tmp/rh_password \
         --build-arg GOPROXY=$GOPROXY \
         --build-arg RHEL_STIG_BASE_IMAGE=$RHEL_STIG_BASE_IMAGE \
+        --build-arg CVE_UPDATES_RHEL="$CVE_UPDATES_RHEL" \
         --file      Dockerfile.stig-rhel \
         --tag       $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG \
         .
