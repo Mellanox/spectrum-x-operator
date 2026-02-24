@@ -3,7 +3,7 @@ module github.com/Mellanox/spectrum-x-operator
 go 1.24.11
 
 require (
-	github.com/caarlos0/env/v11 v11.3.1
+	github.com/caarlos0/env/v11 v11.4.0
 	github.com/containernetworking/cni v1.3.0
 	github.com/golang/mock v1.6.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
