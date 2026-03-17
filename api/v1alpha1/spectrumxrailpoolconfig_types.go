@@ -20,26 +20,59 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	SyncStatusUnknown    = "Unknown"
+	SyncStatusInProgress = "InProgress"
+	SyncStatusFailed     = "Failed"
+	SyncStatusSucceeded  = "Succeeded"
+)
+
+type NicSelector struct {
+	// PF selector
+	// +kubebuilder:validation:MinItems=1
+	PfNames []string `json:"pfNames"`
+}
+
+// +kubebuilder:validation:XValidation:rule="!has(self.cidrPoolRef) || !has(self.ipam)",message="Only one of cidrPoolRef or ipam can be specified"
+type RailTopology struct {
+	// Rail topology name
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// PF selector
+	NicSelector NicSelector `json:"nicSelector"`
+	// Reference to a CIDR Pool resource
+	CidrPoolRef string `json:"cidrPoolRef,omitempty"`
+	// Advanced IPAM configuration
+	IPAM string `json:"ipam,omitempty"`
+	// MTU
+	// +kubebuilder:validation:Minimum=0
+	MTU int `json:"mtu"`
+}
+
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigSpec struct {
-	// Type of the pool config
-	// +kubebuilder:validation:Enum=none;swplb;hwplb;uniplane
-	// +kubebuilder:validation:Required
-	MultiplaneMode string `json:"multiplaneMode"`
-
-	// Reference to a SriovNetworkNodePolicy resource
-	// +kubebuilder:validation:Required
-	SriovNetworkNodePolicyRef string `json:"sriovNetworkNodePolicyRef"`
-
-	// Reference to a CIDR Pool resource
-	// +kubebuilder:validation:Required
-	CidrPoolRef string `json:"cidrPoolRef"`
+	// +kubebuilder:default:=true
+	DraEnabled bool `json:"draEnabled,omitempty"`
+	// +kubebuilder:validation:Optional
+	// NodeSelector specifies a selector for Spectrum-X nodes
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// Namespace of the NetworkAttachmentDefinition custom resource
+	NetworkNamespace string `json:"networkNamespace,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// Number of VFs for each PF
+	NumVfs int `json:"numVfs"`
+	// Rails topology list
+	// +kubebuilder:validation:MinItems=1
+	RailTopology []RailTopology `json:"railTopology"`
 }
 
 // SpectrumXRailPoolConfigStatus defines the observed state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	SyncStatus         string `json:"syncStatus,omitempty"`
+	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true

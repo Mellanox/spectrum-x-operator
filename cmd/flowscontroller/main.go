@@ -31,6 +31,7 @@ import (
 
 	env "github.com/caarlos0/env/v11"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
+	sriovhost "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -184,9 +185,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	hostManager, err := sriovhost.NewDefaultHostManager()
+	if err != nil {
+		setupLog.Error(err, "unable to create host manager")
+		os.Exit(1)
+	}
+
 	hostFlowsReconciler := controller.NewSpectrumXRailPoolConfigHostFlowsReconciler(
 		mgr.GetClient(),
 		flowsAPI,
+		execAPI,
+		hostManager,
+		Options.NodeName,
 	)
 
 	if err = hostFlowsReconciler.SetupWithManager(mgr, Options.NodeName, ovsWatcherHostFlows); err != nil {
