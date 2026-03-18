@@ -16,26 +16,6 @@ run:
   modules-download-mode: readonly
   tests: false
 
-issues:
-  # don't skip warning about doc comments
-  # don't exclude the default set of lint
-  exclude-use-default: false
-  # restore some of the defaults
-  # (fill in the rest as needed)
-  exclude-rules:
-    - path: "api/*"
-      linters:
-        - lll
-    - path: "internal/*"
-      linters:
-        - dupl
-        - lll
-    - path: "test/*"
-      linters:
-        - gosec
-        - revive
-        - errcheck
-
 linters:
   disable-all: true
   enable:
@@ -96,6 +76,52 @@ linters:
     - usestdlibvars
     - wastedassign
     - whitespace
+  settings:
+    funlen:
+      lines: 120
+      statements: 55
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    gocyclo:
+      min-complexity: 30
+    lll:
+      line-length: 120
+    misspell:
+      locale: US
+    gocritic:
+      disabled-checks:
+        - appendAssign
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+        - name: exported
+          disabled: true
+  exclusions:
+    # don't exclude the default set of lint
+    use-default: false
+    rules:
+      - path: "^api/"
+        linters:
+          - lll
+      - path: "^internal/"
+        linters:
+          - dupl
+          - lll
+      - path: "^test/"
+        linters:
+          - gosec
+          - revive
+          - errcheck
+          - noctx
+          - staticcheck
 
 formatters:
   enable:
@@ -106,32 +132,3 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/Mellanox/spectrum-x-operator
-
-linters-settings:
-  funlen:
-    lines: 120
-    statements: 55
-  goconst:
-    min-len: 2
-    min-occurrences: 2
-  gocyclo:
-    min-complexity: 30
-  lll:
-    line-length: 120
-  misspell:
-    locale: US
-  gocritic:
-    disabled-checks:
-      - appendAssign
-  ireturn:
-    allow:
-      - anon
-      - error
-      - empty
-      - stdlib
-  revive:
-    rules:
-      - name: package-comments
-        severity: warning
-        disabled: true
-        exclude: [""]
