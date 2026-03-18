@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 10m
   # If set we pass it to "go list -mod={option}". From "go help modules":
@@ -56,14 +58,10 @@ linters:
     - goconst
     - gocritic
     - gocyclo
-    - gofmt
-    - gofumpt
     - goheader
-    - goimports
     - gomodguard
     - goprintffuncname
     - gosec
-    - gosimple
     - govet
     - grouper
     - importas
@@ -89,18 +87,25 @@ linters:
     - rowserrcheck
     - sloglint
     - staticcheck
-    - stylecheck
     - tagalign
-    - tenv
     - thelper
     - tparallel
-    - typecheck
     - unconvert
     - unparam
     - unused
     - usestdlibvars
     - wastedassign
     - whitespace
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Mellanox/spectrum-x-operator
 
 linters-settings:
   funlen:
@@ -111,19 +116,10 @@ linters-settings:
     min-occurrences: 2
   gocyclo:
     min-complexity: 30
-  goimports:
-    local-prefixes: github.com/Mellanox/spectrum-x-operator
   lll:
     line-length: 120
   misspell:
     locale: US
-  stylecheck:
-    checks: ["all", "-ST1000"]
-    dot-import-whitelist:
-      - github.com/onsi/ginkgo/v2
-      - github.com/onsi/ginkgo/v2/extensions/table
-      - github.com/onsi/gomega
-      - github.com/onsi/gomega/gstruct
   gocritic:
     disabled-checks:
       - appendAssign
