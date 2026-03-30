@@ -562,8 +562,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 			NodeSelector: nodeSelector,
 			IsRdma:       true,
 			EswitchMode:  "switchdev",
-			////Bridge:       *bridge,
-			//Bridge: nil,
 		},
 	}
 	if !hardwarePLB {

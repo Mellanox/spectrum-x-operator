@@ -58,7 +58,7 @@ type SpectrumXRailPoolConfigSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// Namespace of the NetworkAttachmentDefinition custom resource
 	NetworkNamespace string `json:"networkNamespace,omitempty"`
-	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Minimum=1
 	// Number of VFs for each PF
 	NumVfs int `json:"numVfs"`
 	// Rails topology list
@@ -68,9 +68,6 @@ type SpectrumXRailPoolConfigSpec struct {
 
 // SpectrumXRailPoolConfigStatus defines the observed state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	SyncStatus         string `json:"syncStatus,omitempty"`
 	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
 }
