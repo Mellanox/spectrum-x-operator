@@ -23,6 +23,7 @@ import (
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	sriovhosttypes "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host/types"
 	v1 "k8s.io/api/core/v1"
+	resourcev1beta2 "k8s.io/api/resource/v1beta2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -55,6 +56,8 @@ const (
 	sriovOVSNetworkType     = "OVSNetwork"
 	ovsDataPathType         = "netdev"
 	ovsNetworkInterfaceType = "dpdk"
+	draDeviceClassName      = "sriovnetwork.k8snetworkplumbingwg.io"
+	draRequestName          = "vf"
 )
 
 const (
@@ -214,6 +217,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	ovsNetwork.Labels = ownerLabels
 	if err := r.Patch(ctx, ovsNetwork, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", ovsNetwork.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(ovsNetwork), err)
+	}
+
+	if spec.DraEnabled {
+		claimTemplate := r.generateResourceClaimTemplate(spec, &rt, namespace)
+		claimTemplate.SetGroupVersionKind(resourcev1beta2.SchemeGroupVersion.WithKind("ResourceClaimTemplate"))
+		if err := r.Patch(ctx, claimTemplate, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
+			return fmt.Errorf("error while patching ResourceClaimTemplate %s: %w", client.ObjectKeyFromObject(claimTemplate), err)
+		}
 	}
 
 	localReady, err := r.isLocalNodeReady(ctx, spec, namespace)
@@ -628,6 +639,39 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 		ovsNetwork.Spec.Bridge = fmt.Sprintf("br-%s", rt.Name)
 	}
 	return ovsNetwork
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateResourceClaimTemplate(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, namespace string) *resourcev1beta2.ResourceClaimTemplate {
+	_ = spec
+	celExpression := fmt.Sprintf(`device.attributes["k8s.cni.cncf.io"].resourceName == %q`, rt.Name)
+	return &resourcev1beta2.ResourceClaimTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rt.Name,
+			Namespace: namespace,
+		},
+		Spec: resourcev1beta2.ResourceClaimTemplateSpec{
+			Spec: resourcev1beta2.ResourceClaimSpec{
+				Devices: resourcev1beta2.DeviceClaim{
+					Requests: []resourcev1beta2.DeviceRequest{
+						{
+							Name: draRequestName,
+							Exactly: &resourcev1beta2.ExactDeviceRequest{
+								DeviceClassName: draDeviceClassName,
+								Count:           1,
+								Selectors: []resourcev1beta2.DeviceSelector{
+									{
+										CEL: &resourcev1beta2.CELDeviceSelector{
+											Expression: celExpression,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
