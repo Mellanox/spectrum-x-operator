@@ -193,6 +193,7 @@ func main() {
 
 	hostFlowsReconciler := controller.NewSpectrumXRailPoolConfigHostFlowsReconciler(
 		mgr.GetClient(),
+		mgr.GetScheme(),
 		flowsAPI,
 		execAPI,
 		hostManager,
