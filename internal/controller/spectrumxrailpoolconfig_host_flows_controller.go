@@ -21,15 +21,24 @@ import (
 	"fmt"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
 	sriovhosttypes "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host/types"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/render"
+	"k8s.io/apimachinery/pkg/api/equality"
+	uns "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	kscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -39,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
+	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 )
 
@@ -58,6 +68,13 @@ const (
 )
 
 const (
+	DaemonSet      = "DaemonSet"
+	Role           = "Role"
+	RoleBinding    = "RoleBinding"
+	ServiceAccount = "ServiceAccount"
+)
+
+const (
 	finalizerName  = "spectrumx.nvidia.com/spectrumxrailpoolconfig"
 	labelOwnerName = "spectrumx.nvidia.com/owner-name"
 )
@@ -65,6 +82,7 @@ const (
 // SpectrumXRailPoolConfigHostFlowsReconciler reconciles a SpectrumXRailPoolConfig object
 type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	client.Client
+	Scheme   *runtime.Scheme
 	flows    FlowsAPI
 	exec     exec.API
 	bridge   sriovhosttypes.BridgeInterface
@@ -73,6 +91,7 @@ type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 
 func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 	client client.Client,
+	scheme *runtime.Scheme,
 	flows FlowsAPI,
 	execAPI exec.API,
 	bridge sriovhosttypes.BridgeInterface,
@@ -80,6 +99,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 ) *SpectrumXRailPoolConfigHostFlowsReconciler {
 	return &SpectrumXRailPoolConfigHostFlowsReconciler{
 		Client:   client,
+		Scheme:   scheme,
 		flows:    flows,
 		exec:     execAPI,
 		bridge:   bridge,
@@ -157,7 +177,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	}
 
 	for _, rt := range rpc.Spec.RailTopology {
-		err := r.reconcileRailTopology(ctx, &rpc.Spec, rt, rpc.Namespace, rpc.Name)
+		err := r.reconcileRailTopology(ctx, rpc, rt)
 		if err != nil {
 			log.Error(err, "failed to reconcile rail topology", "rail topology", rt)
 			return err
@@ -177,12 +197,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt v1alpha1.RailTopology, namespace, rpcName string) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig, rt v1alpha1.RailTopology) error {
+	spec := &rpc.Spec
+	namespace := rpc.Namespace
 	if len(rt.NicSelector.PfNames) == 0 {
 		return fmt.Errorf("no PF names are specified in rail topology")
 	}
 
-	ownerLabels := map[string]string{labelOwnerName: rpcName}
+	ownerLabels := map[string]string{labelOwnerName: rpc.Name}
 
 	poolConfig := r.generateSRIOVNetworkPoolConfig(spec, &rt, namespace)
 	poolConfig.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovNetworkPoolConfig))
@@ -198,7 +220,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	} else {
 		// hw multiplane
 		policy = r.generateSRIOVNetworkNodePolicy(spec, &rt, true, namespace)
-		if err := r.configureXPlane(ctx, spec, &rt, namespace); err != nil {
+		if err := r.configureXPlane(ctx, rpc, spec, &rt, namespace); err != nil {
 			return fmt.Errorf("failed to configure xplane for rail topology %s: %w", rt.Name, err)
 		}
 	}
@@ -216,72 +238,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		return fmt.Errorf("error while patching %s %s: %w", ovsNetwork.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(ovsNetwork), err)
 	}
 
-	localReady, err := r.isLocalNodeReady(ctx, spec, namespace)
-	if err != nil {
-		return err
-	}
-	if !localReady {
-		return nil
-	}
-
-	pfName := policy.Spec.NicSelector.PfNames[0]
-
-	bridgeName, err := r.flows.GetBridgeNameFromPortName(pfName)
-	if err != nil {
-		return fmt.Errorf("failed to get bridge name for port %s: %v", pfName, err)
-	}
-
-	manageXPlane := len(rt.NicSelector.PfNames) != 1
-	if !manageXPlane {
-		if err = r.flows.AddSoftwareMultiplaneFlows(
-			bridgeName,
-			hostFlowsCookie,
-			pfName,
-		); err != nil {
-			return fmt.Errorf("failed to add software multiplane flows: %v", err)
-		}
-	} else {
-		pfNames := policy.Spec.NicSelector.PfNames
-		if err := r.flows.AddHardwareMultiplaneGroups(bridgeName, pfNames); err != nil {
-			return fmt.Errorf("failed to add hardware multiplane groups: %v", err)
-		}
-
-		if err = r.flows.AddHardwareMultiplaneFlows(bridgeName, hostFlowsCookie, pfNames); err != nil {
-			return fmt.Errorf("failed to add hardware multiplane flows: %v", err)
-		}
-	}
-
 	return nil
 }
 
-// isLocalNodeReady returns true if the local node is selected by the pool and all
-// selected nodes have SyncStatus == Succeeded (mirroring the gate in configureXPlane).
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) isLocalNodeReady(ctx context.Context, spec *v1alpha1.SpectrumXRailPoolConfigSpec, namespace string) (bool, error) {
-	nodeList := &v1.NodeList{}
-	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
-		return false, fmt.Errorf("failed to list nodes: %w", err)
-	}
-	localNodeFound := false
-	for _, node := range nodeList.Items {
-		nodeState := &sriovv1.SriovNetworkNodeState{}
-		nsn := types.NamespacedName{Name: node.Name, Namespace: namespace}
-		if err := r.Get(ctx, nsn, nodeState); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-			return false, fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
-		}
-		if nodeState.Status.SyncStatus != v1alpha1.SyncStatusSucceeded {
-			return false, nil
-		}
-		if node.Name == r.nodeName {
-			localNodeFound = true
-		}
-	}
-	return localNodeFound, nil
-}
-
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, namespace string) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig, spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, namespace string) error {
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
@@ -311,7 +271,141 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 		return nil
 	}
 
-	return r.createXPlaneBridges(rt, localNodeState)
+	err := r.createXPlaneBridges(rt, localNodeState)
+	if err != nil {
+		return fmt.Errorf("failed to create X-Plane bridges: %w", err)
+	}
+	if err := r.deployXplane(ctx, r.Client, rpc, r.Scheme, namespace, config.FromEnv()); err != nil {
+		return fmt.Errorf("failed to deploy xplane: %w", err)
+	}
+
+	return nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Context, client client.Client, poolConfig *v1alpha1.SpectrumXRailPoolConfig,
+	scheme *runtime.Scheme, namespace string, cfg *config.OperatorConfig,
+) error {
+	logger := log.Log.WithName("deployXplane")
+	logger.Info("Deploying Xplane Service")
+	data := render.MakeRenderData()
+	data.Data["Namespace"] = namespace
+	data.Data["ImagePullSecrets"] = cfg.ImagePullSecrets
+	data.Data["Image"] = fmt.Sprintf("%s/%s:%s", cfg.XPlaneRepository, cfg.XPlaneImage, cfg.XPlaneVersion)
+
+	objs, err := render.RenderDir("manifests/state-xplane", &data)
+	if err != nil {
+		return fmt.Errorf("failed to render xplane manifests: %w", err)
+	}
+	// Sync DaemonSets
+	for _, obj := range objs {
+		err = syncDsObject(ctx, client, scheme, poolConfig, obj)
+		if err != nil {
+			logger.Error(err, "Couldn't sync SR-IoV daemons objects")
+			return err
+		}
+	}
+	return nil
+}
+
+func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha1.SpectrumXRailPoolConfig, obj *uns.Unstructured) error {
+	logger := log.Log.WithName("syncDsObject")
+	kind := obj.GetKind()
+	logger.V(1).Info("Start to sync Objects", "Kind", kind)
+	switch kind {
+	case ServiceAccount, Role, RoleBinding:
+		if err := controllerutil.SetControllerReference(rpc, obj, scheme); err != nil {
+			return err
+		}
+		if err := apply.ApplyObject(ctx, client, obj); err != nil {
+			logger.Error(err, "Fail to sync", "Kind", kind)
+			return err
+		}
+	case DaemonSet:
+		ds := &appsv1.DaemonSet{}
+		err := updateDaemonsetNodeSelector(obj, rpc.Spec.NodeSelector)
+		if err != nil {
+			logger.Error(err, "Fail to update DaemonSet's node selector")
+			return err
+		}
+		err = scheme.Convert(obj, ds, nil)
+		if err != nil {
+			logger.Error(err, "Fail to convert to DaemonSet")
+			return err
+		}
+		err = syncDaemonSet(ctx, client, scheme, rpc, ds)
+		if err != nil {
+			logger.Error(err, "Fail to sync DaemonSet", "Namespace", ds.Namespace, "Name", ds.Name)
+			return err
+		}
+	}
+	return nil
+}
+
+func syncDaemonSet(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha1.SpectrumXRailPoolConfig, in *appsv1.DaemonSet) error {
+	logger := log.Log.WithName("syncDaemonSet")
+	logger.V(1).Info("Start to sync DaemonSet", "Namespace", in.Namespace, "Name", in.Name)
+	var err error
+
+	if err = controllerutil.SetControllerReference(rpc, in, scheme); err != nil {
+		return err
+	}
+	ds := &appsv1.DaemonSet{}
+	err = client.Get(ctx, types.NamespacedName{Namespace: in.Namespace, Name: in.Name}, ds)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("Created DaemonSet", in.Namespace, in.Name)
+			err = client.Create(ctx, in)
+			if err != nil {
+				logger.Error(err, "Fail to create Daemonset", "Namespace", in.Namespace, "Name", in.Name)
+				return err
+			}
+		} else {
+			logger.Error(err, "Fail to get Daemonset", "Namespace", in.Namespace, "Name", in.Name)
+			return err
+		}
+	} else {
+		logger.V(1).Info("DaemonSet already exists, updating")
+		// DeepDerivative checks for changes only comparing non-zero fields in the source struct.
+		// This skips default values added by the api server.
+		// References in https://github.com/kubernetes-sigs/kubebuilder/issues/592#issuecomment-625738183
+
+		// Note(Adrianc): we check Equality of OwnerReference as we changed sriov-device-plugin owner ref
+		// from SriovNetworkNodePolicy to SriovOperatorConfig, hence even if there is no change in spec,
+		// we need to update the obj's owner reference.
+
+		if equality.Semantic.DeepEqual(in.OwnerReferences, ds.OwnerReferences) &&
+			equality.Semantic.DeepDerivative(in.Spec, ds.Spec) {
+			logger.V(1).Info("Daemonset spec did not change, not updating")
+			return nil
+		}
+		err = client.Update(ctx, in)
+		if err != nil {
+			logger.Error(err, "Fail to update DaemonSet", "Namespace", in.Namespace, "Name", in.Name)
+			return err
+		}
+	}
+	return nil
+}
+
+func updateDaemonsetNodeSelector(obj *uns.Unstructured, nodeSelector map[string]string) error {
+	if len(nodeSelector) == 0 {
+		return nil
+	}
+
+	ds := &appsv1.DaemonSet{}
+	scheme := kscheme.Scheme
+	err := scheme.Convert(obj, ds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to convert Unstructured [%s] to DaemonSet: %v", obj.GetName(), err)
+	}
+
+	ds.Spec.Template.Spec.NodeSelector = nodeSelector
+
+	err = scheme.Convert(ds, obj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to convert DaemonSet [%s] to Unstructured: %v", obj.GetName(), err)
+	}
+	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(rt *v1alpha1.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {

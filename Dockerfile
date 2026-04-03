@@ -60,6 +60,7 @@ COPY --from=builder /workspace/build/flowcontroller .
 COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
 COPY --from=builder /workspace /src
+COPY manifests /manifests
 
 USER 65532:65532
 
