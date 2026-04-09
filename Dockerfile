@@ -42,7 +42,7 @@ COPY ./ ./
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
 
-FROM ${BASE_IMAGE_DOCA_FULL_RT_HOST:-nvcr.io/nvidia/doca/doca:3.1.0-full-rt-host}
+FROM nvcr.io/nvidia/doca/doca:3.3.0-full-rt-host
 
 # DOCA repositories have a GPG issue, so we need to allow insecure repositories.
 # GPG error: https://linux.mellanox.com/public/repo/doca/3.2.1/ubuntu22.04/x86_64 ./ Release: The following signatures couldn't be verified because the public key is not available: NO_PUBKEY A024F6F0E6D6A281
