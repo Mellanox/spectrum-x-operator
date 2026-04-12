@@ -76,7 +76,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 	nsn := types.NamespacedName{Namespace: rpc.Namespace, Name: rpc.Spec.SriovNetworkNodePolicyRef}
 	sriovNetworkNodePolicy := &sriovv1.SriovNetworkNodePolicy{}
 
-	if err := r.Client.Get(ctx, nsn, sriovNetworkNodePolicy); err != nil {
+	if err := r.Get(ctx, nsn, sriovNetworkNodePolicy); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get SriovNetworkNodePolicy %s: %v", nsn, err)
 	}
 
