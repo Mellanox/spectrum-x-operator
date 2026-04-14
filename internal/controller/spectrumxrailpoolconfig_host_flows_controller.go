@@ -689,18 +689,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 	case rt.IPAM != "":
 		ipam = rt.IPAM
 	case rt.CidrPoolRef != "":
-		ipam = fmt.Sprintf(`
-				"type": "nv-ipam",
-				"poolName": "%q",
-				"poolType": "cidrpool"
-				}
-					metaPlugins: |
-				{
-					"type": "rdma"
-				},
-				{
-					"type": "rail"
-				}`, rt.CidrPoolRef)
+		ipam = fmt.Sprintf(`{"type": "nv-ipam","poolName": %q, "poolType": "cidrpool"}`, rt.CidrPoolRef)
 	}
 
 	ovsNetwork := &sriovv1.OVSNetwork{
@@ -709,11 +698,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 			Namespace: namespace,
 		},
 		Spec: sriovv1.OVSNetworkSpec{
-			ResourceName:     rt.Name,
-			InterfaceType:    ovsNetworkInterfaceType,
-			NetworkNamespace: spec.NetworkNamespace,
-			MTU:              uint(rt.MTU), //nolint:gosec // MTU is always non-negative
-			IPAM:             ipam,
+			ResourceName:      rt.Name,
+			InterfaceType:     ovsNetworkInterfaceType,
+			NetworkNamespace:  spec.NetworkNamespace,
+			MTU:               uint(rt.MTU), //nolint:gosec // MTU is always non-negative
+			IPAM:              ipam,
+			MetaPluginsConfig: `{"type": "rdma"},{"type": "rail"}`,
 		},
 	}
 	if addBridge {
