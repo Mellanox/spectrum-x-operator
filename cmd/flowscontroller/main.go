@@ -177,14 +177,6 @@ func main() {
 
 	staleFlowsCleaner.StartCleanupRoutine(context.Background())
 
-	if err := (&controller.SpectrumXRailPoolConfigIPAssignerReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
-		os.Exit(1)
-	}
-
 	hostManager, err := sriovhost.NewDefaultHostManager()
 	if err != nil {
 		setupLog.Error(err, "unable to create host manager")
