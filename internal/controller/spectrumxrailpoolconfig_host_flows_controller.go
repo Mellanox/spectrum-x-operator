@@ -79,6 +79,11 @@ const (
 	labelOwnerName = "spectrumx.nvidia.com/owner-name"
 )
 
+const (
+	rdmaQoSToS = 96
+	rdmaQoSTC  = 102
+)
+
 // SpectrumXRailPoolConfigHostFlowsReconciler reconciles a SpectrumXRailPoolConfig object
 type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	client.Client
@@ -703,7 +708,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 			NetworkNamespace:  spec.NetworkNamespace,
 			MTU:               uint(rt.MTU), //nolint:gosec // MTU is always non-negative
 			IPAM:              ipam,
-			MetaPluginsConfig: `{"type": "rdma"},{"type": "rail"}`,
+			MetaPluginsConfig: fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}}`, rdmaQoSToS, rdmaQoSTC),
 		},
 	}
 	if addBridge {
