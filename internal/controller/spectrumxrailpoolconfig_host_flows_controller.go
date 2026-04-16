@@ -50,6 +50,7 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
+	"github.com/Mellanox/spectrum-x-operator/pkg/lib"
 )
 
 const (
@@ -276,7 +277,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 		return nil
 	}
 
-	err := r.createXPlaneBridges(rt, localNodeState)
+	err := r.createXPlaneBridges(ctx, rt, localNodeState)
 	if err != nil {
 		return fmt.Errorf("failed to create X-Plane bridges: %w", err)
 	}
@@ -413,7 +414,7 @@ func updateDaemonsetNodeSelector(obj *uns.Unstructured, nodeSelector map[string]
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(rt *v1alpha1.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
 	// Build map of PF name -> interface info from node state
 	ifaceByName := make(map[string]*sriovv1.InterfaceExt, len(nodeState.Status.Interfaces))
 	for i := range nodeState.Status.Interfaces {
@@ -421,10 +422,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(rt *v1a
 		ifaceByName[iface.Name] = iface
 	}
 
-	// Build desired br-railX bridge configs — one bridge per PF with PF as DPDK uplink.
+	pfNames := lib.FilterNICs(ctx, rt.NicSelector.PfNames)
+
+	// Build desired br-railX bridge configs — one bridge per NIC
 	// Use ConfigureBridges from sriov-network-operator to manage them via OVSDB.
-	desiredBridges := make([]sriovv1.OVSConfigExt, 0, len(rt.NicSelector.PfNames))
-	for idx, pfName := range rt.NicSelector.PfNames {
+	desiredBridges := make([]sriovv1.OVSConfigExt, 0, len(pfNames))
+	for idx, pfName := range pfNames {
 		uplink := sriovv1.OVSUplinkConfigExt{
 			Name: pfName,
 			Interface: sriovv1.OVSInterfaceConfig{
@@ -469,7 +472,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(rt *v1a
 	}
 
 	// Connect br-xplane to each br-railX via patch ports and add VF representors.
-	for idx, pfName := range rt.NicSelector.PfNames {
+	for idx, pfName := range pfNames {
 		railBridge := fmt.Sprintf("br-%s-%d", rt.Name, idx)
 		patchXplanePort := fmt.Sprintf("patch-xplane-to-%s-%d", rt.Name, idx)
 		patchRailPort := fmt.Sprintf("patch-%s-%d-to-xplane", rt.Name, idx)
@@ -642,9 +645,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
 	nicSelector := &sriovv1.SriovNetworkNicSelector{
-		PfNames: rt.NicSelector.PfNames,
+		PfNames: []string{rt.NicSelector.PfNames[0]},
 	}
 	nodeSelector := spec.NodeSelector
+
+	devlinkParams := []sriovv1.DevlinkParam{{Name: "esw_multiport", Value: "true", Cmode: "cmode", ApplyOn: "PF"}}
 
 	nodePolicy := &sriovv1.SriovNetworkNodePolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -661,6 +666,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 			NodeSelector: nodeSelector,
 			IsRdma:       true,
 			EswitchMode:  "switchdev",
+			DevlinkParams: sriovv1.DevlinkParams{
+				devlinkParams,
+			},
 		},
 	}
 	if !hardwarePLB {
