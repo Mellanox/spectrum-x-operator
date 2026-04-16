@@ -182,6 +182,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return fmt.Errorf("expected one or more rail topologies to be specified")
 	}
 
+	ownerLabels := map[string]string{labelOwnerName: rpc.Name}
+	poolConfig := r.generateSRIOVNetworkPoolConfig(rpc)
+	poolConfig.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovNetworkPoolConfig))
+	poolConfig.Labels = ownerLabels
+	if err := r.Patch(ctx, poolConfig, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
+		return fmt.Errorf("error while patching %s %s: %w", poolConfig.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(poolConfig), err)
+	}
+
 	for _, rt := range rpc.Spec.RailTopology {
 		err := r.reconcileRailTopology(ctx, rpc, rt)
 		if err != nil {
@@ -212,13 +220,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 
 	ownerLabels := map[string]string{labelOwnerName: rpc.Name}
 
-	poolConfig := r.generateSRIOVNetworkPoolConfig(spec, &rt, namespace)
-	poolConfig.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovNetworkPoolConfig))
-	poolConfig.Labels = ownerLabels
-	if err := r.Patch(ctx, poolConfig, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
-		return fmt.Errorf("error while patching %s %s: %w", poolConfig.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(poolConfig), err)
-	}
-
 	var policy *sriovv1.SriovNetworkNodePolicy
 	if len(rt.NicSelector.PfNames) == 1 {
 		// sw plb or no multiplane
@@ -226,9 +227,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	} else {
 		// hw multiplane
 		policy = r.generateSRIOVNetworkNodePolicy(spec, &rt, true, namespace)
-		if err := r.configureXPlane(ctx, rpc, spec, &rt, namespace); err != nil {
-			return fmt.Errorf("failed to configure xplane for rail topology %s: %w", rt.Name, err)
-		}
 	}
 	policy.Labels = ownerLabels
 
@@ -242,6 +240,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	ovsNetwork.Labels = ownerLabels
 	if err := r.Patch(ctx, ovsNetwork, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", ovsNetwork.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(ovsNetwork), err)
+	}
+
+	if len(rt.NicSelector.PfNames) > 1 {
+		if err := r.configureXPlane(ctx, rpc, spec, &rt, namespace); err != nil {
+			return fmt.Errorf("failed to configure xplane for rail topology %s: %w", rt.Name, err)
+		}
 	}
 
 	return nil
@@ -621,15 +625,15 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context
 	return r.Status().Patch(ctx, rpc, patch)
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, namespace string) *sriovv1.SriovNetworkPoolConfig {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(rpc *v1alpha1.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
 	nodeSelector := &metav1.LabelSelector{
-		MatchLabels: spec.NodeSelector,
+		MatchLabels: rpc.Spec.NodeSelector,
 	}
 
 	nodePool := &sriovv1.SriovNetworkPoolConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      rt.Name,
-			Namespace: namespace,
+			Name:      rpc.Name,
+			Namespace: rpc.Namespace,
 		},
 		Spec: sriovv1.SriovNetworkPoolConfigSpec{
 			NodeSelector:             nodeSelector,
@@ -645,11 +649,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
 	nicSelector := &sriovv1.SriovNetworkNicSelector{
-		PfNames: []string{rt.NicSelector.PfNames[0]},
+		PfNames: rt.NicSelector.PfNames,
 	}
 	nodeSelector := spec.NodeSelector
 
-	devlinkParams := []sriovv1.DevlinkParam{{Name: "esw_multiport", Value: "true", Cmode: "cmode", ApplyOn: "PF"}}
+	devlinkParams := []sriovv1.DevlinkParam{{Name: "esw_multiport", Value: "true", Cmode: "runtime", ApplyOn: "PF"}}
 
 	nodePolicy := &sriovv1.SriovNetworkNodePolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -667,7 +671,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 			IsRdma:       true,
 			EswitchMode:  "switchdev",
 			DevlinkParams: sriovv1.DevlinkParams{
-				devlinkParams,
+				Params: devlinkParams,
 			},
 		},
 	}
