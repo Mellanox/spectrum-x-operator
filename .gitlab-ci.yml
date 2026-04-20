@@ -243,7 +243,8 @@ pulse-scan-oss-operator:
     CONTAINER_IMAGE: $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$UBUNTU_DOCKER_TAG
     NSPECT_ID: $NSPECT_ID
     PROGRAM_VERSION: $NSPECT_RELEASE_VERSION
-  allow_failure: true  # non gating (pipeline stages will display warnings instead of failures)
+  allow_failure:
+    exit_codes: [11, 255]  # non-gating for scan/policy failures; technical errors (e.g. auth, invalid nspect id) still fail the pipeline
 
 pulse-scan-stig-operator:
   stage: pulse-scan-stig
@@ -266,7 +267,8 @@ pulse-scan-stig-operator:
     CONTAINER_IMAGE: $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$UBUNTU_DOCKER_TAG
     NSPECT_ID: $NSPECT_ID
     PROGRAM_VERSION: $NSPECT_RELEASE_VERSION
-  allow_failure: true  # non gating (pipeline stages will display warnings instead of failures)
+  allow_failure:
+    exit_codes: [11, 255]  # non-gating for scan/policy failures; technical errors (e.g. auth, invalid nspect id) still fail the pipeline
 
 pulse-scan-oss-operator-rhel:
   stage: pulse-scan-oss
@@ -286,7 +288,8 @@ pulse-scan-oss-operator-rhel:
     CONTAINER_IMAGE: $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG
     NSPECT_ID: $NSPECT_ID
     PROGRAM_VERSION: $NSPECT_RELEASE_VERSION
-  allow_failure: true
+  allow_failure:
+    exit_codes: [11, 255]  # non-gating for scan/policy failures; technical errors (e.g. auth, invalid nspect id) still fail the pipeline
 
 pulse-scan-stig-operator-rhel:
   stage: pulse-scan-stig
@@ -309,4 +312,5 @@ pulse-scan-stig-operator-rhel:
     CONTAINER_IMAGE: $DOCKER_REGISTRY/$OPERATOR_IMAGE_NAME:$RHEL_DOCKER_TAG
     NSPECT_ID: $NSPECT_ID
     PROGRAM_VERSION: $NSPECT_RELEASE_VERSION
-  allow_failure: true
+  allow_failure:
+    exit_codes: [11, 255]  # non-gating for scan/policy failures; technical errors (e.g. auth, invalid nspect id) still fail the pipeline
