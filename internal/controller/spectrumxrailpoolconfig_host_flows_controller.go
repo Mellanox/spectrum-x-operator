@@ -50,7 +50,6 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
-	"github.com/Mellanox/spectrum-x-operator/pkg/lib"
 )
 
 const (
@@ -64,7 +63,7 @@ const (
 	sriovNodePolicyType     = "SriovNetworkNodePolicy"
 	sriovNetworkPoolConfig  = "SriovNetworkPoolConfig"
 	sriovOVSNetworkType     = "OVSNetwork"
-	ovsDataPathType         = "netdev"
+	ovsDataPathType         = "doca"
 	ovsNetworkInterfaceType = "dpdk"
 )
 
@@ -148,17 +147,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	}
 
 	if !rpc.DeletionTimestamp.IsZero() {
-		xplaneDeleted := false
 		for _, rt := range rpc.Spec.RailTopology {
 			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name); err != nil {
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
 				return err
 			}
-			if err := r.cleanupXPlaneBridges(ctx, &rt, !xplaneDeleted); err != nil {
-				log.Error(err, "failed to cleanup xplane bridges", "rail topology", rt)
-				return err
+			if len(rt.NicSelector.PfNames) > 1 {
+				r.cleanupXPlaneBridges(ctx, &rt)
 			}
-			xplaneDeleted = true
 		}
 		patch := client.MergeFrom(rpc.DeepCopy())
 		controllerutil.RemoveFinalizer(rpc, finalizerName)
@@ -262,9 +258,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 				return nil
 			}
 			return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
-		}
-		if nodeState.Status.SyncStatus != v1alpha1.SyncStatusSucceeded {
-			return nil
 		}
 		if node.Name == r.nodeName {
 			localNodeState = nodeState
@@ -414,6 +407,7 @@ func updateDaemonsetNodeSelector(obj *uns.Unstructured, nodeSelector map[string]
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
+	log := log.FromContext(ctx)
 	// Build map of PF name -> interface info from node state
 	ifaceByName := make(map[string]*sriovv1.InterfaceExt, len(nodeState.Status.Interfaces))
 	for i := range nodeState.Status.Interfaces {
@@ -421,51 +415,63 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 		ifaceByName[iface.Name] = iface
 	}
 
-	pfNames, err := lib.FilterNICs(ctx, rt.NicSelector.PfNames)
-	if err != nil {
-		return fmt.Errorf("failed to filter NICSs for specified selector: %w", err)
-	}
-
-	// Build desired bridge configs — one bridge per NIC
-	// Use ConfigureBridges from sriov-network-operator to manage them via OVSDB.
-	for idx, pfName := range pfNames {
-		brName := fmt.Sprintf("br-%s-%d", pfName, idx)
-		if _, err := r.exec.Execute(fmt.Sprintf(
-			"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s",
-			brName, brName, ovsDataPathType,
-		)); err != nil {
-			return fmt.Errorf("failed to create bridge %s: %w", brName, err)
-		}
-	}
-
-	// Create br-xplane bridge. It connects all bridges via patch ports and
-	// has no single physical uplink, so it cannot be created via ConfigureBridges.
 	if _, err := r.exec.Execute(fmt.Sprintf(
-		"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s",
-		xplaneBridge, xplaneBridge, ovsDataPathType,
+		"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s fail-mode=secure"+
+			" -- br-set-external-id %s bridge-id %s",
+		xplaneBridge, xplaneBridge, ovsDataPathType, xplaneBridge, xplaneBridge,
 	)); err != nil {
 		return fmt.Errorf("failed to create bridge %s: %w", xplaneBridge, err)
 	}
 
-	// Connect br-xplane to each bridge via patch ports and add VF representors.
-	for idx, pfName := range pfNames {
-		railBridge := fmt.Sprintf("br-%s-%d", pfName, idx)
-		patchXplanePort := fmt.Sprintf("patch-xplane-to-%s-%d", pfName, idx)
-		patchRailPort := fmt.Sprintf("patch-%s-%d-to-xplane", pfName, idx)
+	// Build desired bridge configs — one bridge per NIC
+	// Use ConfigureBridges from sriov-network-operator to manage them via OVSDB.
+	brName := fmt.Sprintf("br-rail-%s", rt.Name)
+	if _, err := r.exec.Execute(fmt.Sprintf(
+		"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s fail-mode=standalone"+
+			" -- br-set-external-id %s bridge-id %s",
+		brName, brName, ovsDataPathType, brName, brName,
+	)); err != nil {
+		return fmt.Errorf("failed to create bridge %s: %w", brName, err)
+	}
 
-		if _, err := r.exec.Execute(fmt.Sprintf(
-			"ovs-vsctl --may-exist add-port %s %s -- set interface %s type=patch options:peer=%s",
-			xplaneBridge, patchXplanePort, patchXplanePort, patchRailPort,
-		)); err != nil {
-			return fmt.Errorf("failed to add patch port %s to bridge %s: %w", patchXplanePort, xplaneBridge, err)
-		}
+	// Create br-xplane bridge. It connects all bridges via patch ports and
+	// has no single physical uplink, so it cannot be created via ConfigureBridges.
 
+	for idx, pfName := range rt.NicSelector.PfNames {
 		if _, err := r.exec.Execute(fmt.Sprintf(
-			"ovs-vsctl --may-exist add-port %s %s -- set interface %s type=patch options:peer=%s",
-			railBridge, patchRailPort, patchRailPort, patchXplanePort,
+			"ovs-vsctl --may-exist add-port %s %s"+
+				" -- set Interface %s"+
+				" mtu_request=%d"+
+				" type=doca"+
+				" external_ids:xplane-plane-id=%d"+
+				" external_ids:xplane-group-id=%s"+
+				" external_ids:xplane-uplink=true",
+			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name,
 		)); err != nil {
-			return fmt.Errorf("failed to add patch port %s to bridge %s: %w", patchRailPort, railBridge, err)
+			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
+			continue
 		}
+	}
+
+	patchXplanePort := fmt.Sprintf("patch-xplane-to-%s", brName)
+	patchRailPort := fmt.Sprintf("patch-%s-to-xplane", brName)
+	if _, err := r.exec.Execute(fmt.Sprintf(
+		"ovs-vsctl"+
+			" --may-exist add-port %s %s"+
+			" -- set Interface %s"+
+			" type=patch"+
+			" options:peer=%s"+
+			" mtu_request=%d"+
+			" external_ids:xplane-group-id=%s"+
+			" external_ids:xplane-downlink=patch"+
+			" -- --may-exist add-port %s %s"+
+			" -- set Interface %s"+
+			" type=patch"+
+			" options:peer=%s"+
+			" mtu_request=%d",
+		xplaneBridge, patchXplanePort, patchXplanePort, patchRailPort, rt.MTU, rt.Name, brName, patchRailPort, patchRailPort, patchXplanePort, rt.MTU,
+	)); err != nil {
+		log.Error(err, "failed to add patch port to bridge", "PF name", patchXplanePort, "bridge name", xplaneBridge)
 	}
 
 	return nil
@@ -473,28 +479,19 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 
 // cleanupXPlaneBridges tears down host OVS bridges created by createXPlaneBridges.
 // deleteXplane controls whether br-xplane itself is deleted (only on the last rail topology).
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology, deleteXplane bool) error {
-	pfNames, err := lib.FilterNICs(ctx, rt.NicSelector.PfNames)
-	if err != nil {
-		return fmt.Errorf("failed to filter NICSs for specified selector: %w", err)
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology) {
+	log := log.FromContext(ctx)
+	railBridge := fmt.Sprintf("br-rail-%s", rt.Name)
+	if _, err := r.exec.Execute(fmt.Sprintf(
+		"ovs-vsctl --if-exists del-br %s", railBridge,
+	)); err != nil {
+		log.Error(err, "failed to delete bridge", "bridge name", railBridge)
 	}
-
-	for idx, pfName := range pfNames {
-		railBridge := fmt.Sprintf("br-%s-%d", pfName, idx)
-		if _, err := r.exec.Execute(fmt.Sprintf(
-			"ovs-vsctl --if-exists del-br %s", railBridge,
-		)); err != nil {
-			return fmt.Errorf("failed to delete bridge %s: %w", railBridge, err)
-		}
+	if _, err := r.exec.Execute(fmt.Sprintf(
+		"ovs-vsctl --if-exists del-br %s", xplaneBridge,
+	)); err != nil {
+		log.Error(err, "failed to delete bridge", "bridge name", xplaneBridge)
 	}
-	if deleteXplane {
-		if _, err := r.exec.Execute(fmt.Sprintf(
-			"ovs-vsctl --if-exists del-br %s", xplaneBridge,
-		)); err != nil {
-			return fmt.Errorf("failed to delete bridge %s: %w", xplaneBridge, err)
-		}
-	}
-	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources(ctx context.Context, namespace, rtName string) error {
@@ -541,8 +538,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 					PfNames: policy.Spec.NicSelector.PfNames,
 				},
 			}
-			if err := r.cleanupXPlaneBridges(ctx, &rt, false); err != nil {
-				return fmt.Errorf("failed to cleanup xplane bridges for removed rail topology %s: %w", policy.Name, err)
+			if len(rt.NicSelector.PfNames) > 1 {
+				r.cleanupXPlaneBridges(ctx, &rt)
 			}
 		}
 	}
@@ -639,12 +636,13 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 			NodeSelector: nodeSelector,
 			IsRdma:       true,
 			EswitchMode:  "switchdev",
-			DevlinkParams: sriovv1.DevlinkParams{
-				Params: devlinkParams,
-			},
 		},
 	}
-	if !hardwarePLB {
+	if hardwarePLB {
+		nodePolicy.Spec.DevlinkParams = sriovv1.DevlinkParams{
+			Params: devlinkParams,
+		}
+	} else {
 		bridge := &sriovv1.Bridge{
 			GroupingPolicy: "perPF",
 			OVS: &sriovv1.OVSConfig{
