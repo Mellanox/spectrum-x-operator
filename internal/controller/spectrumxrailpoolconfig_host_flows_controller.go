@@ -53,8 +53,9 @@ import (
 )
 
 const (
-	hostFlowsCookie uint64 = 0x2
-	xplaneBridge           = "br-xplane"
+	hostFlowsCookie    uint64 = 0x2
+	xplaneBridge              = "br-xplane"
+	railBridgeTemplate        = "br-rail-%s"
 )
 
 const SpectrumXRailPoolConfigControllerName = "SpectrumXRailPoolConfigController"
@@ -225,7 +226,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		return fmt.Errorf("error while patching %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
 	}
 
-	addBridge := len(rt.NicSelector.PfNames) == 1
+	addBridge := len(rt.NicSelector.PfNames) > 1
 	ovsNetwork := r.generateOVSNetwork(spec, &rt, addBridge, namespace)
 	ovsNetwork.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovOVSNetworkType))
 	ovsNetwork.Labels = ownerLabels
@@ -425,7 +426,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 
 	// Build desired bridge configs — one bridge per NIC
 	// Use ConfigureBridges from sriov-network-operator to manage them via OVSDB.
-	brName := fmt.Sprintf("br-rail-%s", rt.Name)
+	brName := fmt.Sprintf(railBridgeTemplate, rt.Name)
 	if _, err := r.exec.Execute(fmt.Sprintf(
 		"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s fail-mode=standalone"+
 			" -- br-set-external-id %s bridge-id %s",
@@ -481,7 +482,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 // deleteXplane controls whether br-xplane itself is deleted (only on the last rail topology).
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology) {
 	log := log.FromContext(ctx)
-	railBridge := fmt.Sprintf("br-rail-%s", rt.Name)
+	railBridge := fmt.Sprintf(railBridgeTemplate, rt.Name)
 	if _, err := r.exec.Execute(fmt.Sprintf(
 		"ovs-vsctl --if-exists del-br %s", railBridge,
 	)); err != nil {
@@ -691,7 +692,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 		},
 	}
 	if addBridge {
-		ovsNetwork.Spec.Bridge = fmt.Sprintf("br-%s", rt.Name)
+		ovsNetwork.Spec.Bridge = fmt.Sprintf(railBridgeTemplate, rt.Name)
 	}
 	return ovsNetwork
 }
