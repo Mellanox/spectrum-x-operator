@@ -47,7 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
+	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 )
@@ -130,7 +130,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig) (ctrl.Result, error) {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) (ctrl.Result, error) {
 	err := r.doReconcile(ctx, rpc)
 	if apierrors.IsConflict(err) {
 		return ctrl.Result{Requeue: true}, nil
@@ -138,7 +138,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 	return ctrl.Result{}, err
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
 	log := log.FromContext(ctx)
 
 	if !controllerutil.ContainsFinalizer(rpc, finalizerName) {
@@ -162,9 +162,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return r.Patch(ctx, rpc, patch)
 	}
 
-	if rpc.Status.SyncStatus != v1alpha1.SyncStatusInProgress {
+	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
 		patch := client.MergeFrom(rpc.DeepCopy())
-		rpc.Status.SyncStatus = v1alpha1.SyncStatusInProgress
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
 		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
 			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
 		}
@@ -203,7 +203,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig, rt v1alpha1.RailTopology) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, rt v1alpha2.RailTopology) error {
 	spec := &rpc.Spec
 	namespace := rpc.Namespace
 	if len(rt.NicSelector.PfNames) == 0 {
@@ -243,7 +243,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig, spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, namespace string) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, namespace string) error {
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
@@ -281,7 +281,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Context, client client.Client, poolConfig *v1alpha1.SpectrumXRailPoolConfig,
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Context, client client.Client, poolConfig *v1alpha2.SpectrumXRailPoolConfig,
 	scheme *runtime.Scheme, namespace string, cfg *config.OperatorConfig,
 ) error {
 	logger := log.Log.WithName("deployXplane")
@@ -306,7 +306,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 	return nil
 }
 
-func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha1.SpectrumXRailPoolConfig, obj *uns.Unstructured) error {
+func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha2.SpectrumXRailPoolConfig, obj *uns.Unstructured) error {
 	logger := log.Log.WithName("syncDsObject")
 	kind := obj.GetKind()
 	logger.V(1).Info("Start to sync Objects", "Kind", kind)
@@ -340,7 +340,7 @@ func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Sch
 	return nil
 }
 
-func syncDaemonSet(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha1.SpectrumXRailPoolConfig, in *appsv1.DaemonSet) error {
+func syncDaemonSet(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha2.SpectrumXRailPoolConfig, in *appsv1.DaemonSet) error {
 	logger := log.Log.WithName("syncDaemonSet")
 	logger.V(1).Info("Start to sync DaemonSet", "Namespace", in.Namespace, "Name", in.Name)
 	var err error
@@ -407,7 +407,7 @@ func updateDaemonsetNodeSelector(obj *uns.Unstructured, nodeSelector map[string]
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
 	log := log.FromContext(ctx)
 	// Build map of PF name -> interface info from node state
 	ifaceByName := make(map[string]*sriovv1.InterfaceExt, len(nodeState.Status.Interfaces))
@@ -480,7 +480,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 
 // cleanupXPlaneBridges tears down host OVS bridges created by createXPlaneBridges.
 // deleteXplane controls whether br-xplane itself is deleted (only on the last rail topology).
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha1.RailTopology) {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology) {
 	log := log.FromContext(ctx)
 	railBridge := fmt.Sprintf(railBridgeTemplate, rt.Name)
 	if _, err := r.exec.Execute(fmt.Sprintf(
@@ -514,7 +514,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
 	currentTopologies := make(map[string]struct{}, len(rpc.Spec.RailTopology))
 	for _, rt := range rpc.Spec.RailTopology {
 		currentTopologies[rt.Name] = struct{}{}
@@ -533,9 +533,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, policy.Name); err != nil {
 				return err
 			}
-			rt := v1alpha1.RailTopology{
+			rt := v1alpha2.RailTopology{
 				Name: policy.Name,
-				NicSelector: v1alpha1.NicSelector{
+				NicSelector: v1alpha2.NicSelector{
 					PfNames: policy.Spec.NicSelector.PfNames,
 				},
 			}
@@ -548,35 +548,35 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) updateSyncStatus(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) updateSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(rpc.Spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
 
-	newStatus := v1alpha1.SyncStatusSucceeded
+	newStatus := v1alpha2.SyncStatusSucceeded
 	for _, node := range nodeList.Items {
 		nodeState := &sriovv1.SriovNetworkNodeState{}
 		nsn := types.NamespacedName{Name: node.Name, Namespace: rpc.Namespace}
 		if err := r.Get(ctx, nsn, nodeState); err != nil {
 			if apierrors.IsNotFound(err) {
-				newStatus = v1alpha1.SyncStatusInProgress
+				newStatus = v1alpha2.SyncStatusInProgress
 				continue
 			}
 			return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
 		}
 		switch nodeState.Status.SyncStatus {
-		case v1alpha1.SyncStatusFailed:
-			return r.patchSyncStatus(ctx, rpc, v1alpha1.SyncStatusFailed)
-		case v1alpha1.SyncStatusInProgress:
-			newStatus = v1alpha1.SyncStatusInProgress
+		case v1alpha2.SyncStatusFailed:
+			return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
+		case v1alpha2.SyncStatusInProgress:
+			newStatus = v1alpha2.SyncStatusInProgress
 		}
 	}
 
 	return r.patchSyncStatus(ctx, rpc, newStatus)
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha1.SpectrumXRailPoolConfig, newStatus string) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newStatus string) error {
 	if rpc.Status.SyncStatus == newStatus && rpc.Status.ObservedGeneration == rpc.Generation {
 		return nil
 	}
@@ -586,7 +586,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context
 	return r.Status().Patch(ctx, rpc, patch)
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(rpc *v1alpha1.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(rpc *v1alpha2.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
 	nodeSelector := &metav1.LabelSelector{
 		MatchLabels: rpc.Spec.NodeSelector,
 	}
@@ -614,7 +614,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 	return nodePool
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
 	nicSelector := &sriovv1.SriovNetworkNicSelector{
 		PfNames: rt.NicSelector.PfNames,
 	}
@@ -668,7 +668,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 	return nodePolicy
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1alpha1.SpectrumXRailPoolConfigSpec, rt *v1alpha1.RailTopology, addBridge bool, namespace string) *sriovv1.OVSNetwork {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, namespace string) *sriovv1.OVSNetwork {
 	var ipam string
 	switch {
 	case rt.IPAM != "":
@@ -710,7 +710,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 	})
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.SpectrumXRailPoolConfig{}). // TODO: only reconcile objects that are related to this node
+		For(&v1alpha2.SpectrumXRailPoolConfig{}). // TODO: only reconcile objects that are related to this node
 		Watches(
 			&v1.Node{},
 			railListerHandler,
@@ -719,7 +719,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 			),
 		).
 		WatchesRawSource(source.Channel(ovsWatcher, railListerHandler)).
-		Named("spectrumxrailpoolconfig-host-flows").Complete(reconcile.AsReconciler[*v1alpha1.SpectrumXRailPoolConfig](r.Client, r))
+		Named("spectrumxrailpoolconfig-host-flows").Complete(reconcile.AsReconciler[*v1alpha2.SpectrumXRailPoolConfig](r.Client, r))
 }
 
 type nodeRailLister struct {
@@ -739,7 +739,7 @@ func (r *nodeRailLister) ListRailPoolConfigsForNode(ctx context.Context, _ clien
 		return nil
 	}
 
-	list := &v1alpha1.SpectrumXRailPoolConfigList{}
+	list := &v1alpha2.SpectrumXRailPoolConfigList{}
 	if err := r.client.List(ctx, list); err != nil {
 		logger.Error(err, "failed to list SpectrumXRailPoolConfigs")
 		return nil
