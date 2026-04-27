@@ -534,9 +534,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 
 	for _, policy := range policyList.Items {
 		if _, exists := currentTopologies[policy.Name]; !exists {
-			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, policy.Name); err != nil {
-				return err
-			}
 			rt := v1alpha2.RailTopology{
 				Name: policy.Name,
 				NicSelector: v1alpha2.NicSelector{
