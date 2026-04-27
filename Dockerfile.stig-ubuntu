@@ -57,7 +57,6 @@ RUN dpkg --purge collectx || apt-get remove --purge -y collectx || true && \
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
-COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
 COPY --from=builder /workspace /src
 

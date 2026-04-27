@@ -71,7 +71,6 @@ RUN if [ -n "${CVE_UPDATES_RHEL}" ]; then \
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
-COPY --from=builder /workspace/build/railcni .
 # Copy sources to /src
 COPY --from=builder /workspace /src
 
