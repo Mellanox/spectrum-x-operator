@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	spectrumxv1alpha1 "github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
+	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 
 	schemeAdders := []func(scheme *k8sruntime.Scheme) error{
 		corev1.AddToScheme,
-		spectrumxv1alpha1.AddToScheme,
+		spectrumxv1alpha2.AddToScheme,
 		sriovv1.AddToScheme,
 	}
 

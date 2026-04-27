@@ -17,7 +17,7 @@
 package controller
 
 import (
-	"github.com/Mellanox/spectrum-x-operator/api/v1alpha1"
+	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -82,15 +82,15 @@ var _ = Describe("nodeRailLister", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
 		}
 
-		rpc := v1alpha1.SpectrumXRailPoolConfig{
+		rpc := v1alpha2.SpectrumXRailPoolConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rpcName,
 				Namespace: nsName,
 			},
-			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
-				RailTopology: []v1alpha1.RailTopology{{
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				RailTopology: []v1alpha2.RailTopology{{
 					Name: snnpName,
-					NicSelector: v1alpha1.NicSelector{
+					NicSelector: v1alpha2.NicSelector{
 						PfNames: []string{"test-pf"},
 					},
 				}},
@@ -121,30 +121,30 @@ var _ = Describe("nodeRailLister", func() {
 			snnpName1 = snnpName + "1"
 		)
 
-		rpc0 := &v1alpha1.SpectrumXRailPoolConfig{
+		rpc0 := &v1alpha2.SpectrumXRailPoolConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rpcName0,
 				Namespace: nsName,
 			},
-			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
-				RailTopology: []v1alpha1.RailTopology{{
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				RailTopology: []v1alpha2.RailTopology{{
 					Name: snnpName0,
-					NicSelector: v1alpha1.NicSelector{
+					NicSelector: v1alpha2.NicSelector{
 						PfNames: []string{""},
 					},
 				}},
 			},
 		}
 
-		rpc1 := &v1alpha1.SpectrumXRailPoolConfig{
+		rpc1 := &v1alpha2.SpectrumXRailPoolConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rpcName1,
 				Namespace: nsName,
 			},
-			Spec: v1alpha1.SpectrumXRailPoolConfigSpec{
-				RailTopology: []v1alpha1.RailTopology{{
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				RailTopology: []v1alpha2.RailTopology{{
 					Name: snnpName1,
-					NicSelector: v1alpha1.NicSelector{
+					NicSelector: v1alpha2.NicSelector{
 						PfNames: []string{""},
 					},
 				}},
