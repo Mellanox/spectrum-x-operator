@@ -149,12 +149,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 
 	if !rpc.DeletionTimestamp.IsZero() {
 		for _, rt := range rpc.Spec.RailTopology {
+			if len(rt.NicSelector.PfNames) > 1 {
+				r.cleanupXPlaneBridges(ctx, &rt)
+			}
 			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name); err != nil {
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
 				return err
-			}
-			if len(rt.NicSelector.PfNames) > 1 {
-				r.cleanupXPlaneBridges(ctx, &rt)
 			}
 		}
 		patch := client.MergeFrom(rpc.DeepCopy())
@@ -409,6 +409,7 @@ func updateDaemonsetNodeSelector(obj *uns.Unstructured, nodeSelector map[string]
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology, nodeState *sriovv1.SriovNetworkNodeState) error {
 	log := log.FromContext(ctx)
+	log.Info("createXPlaneBridges(): xplane bridges configuration started")
 	// Build map of PF name -> interface info from node state
 	ifaceByName := make(map[string]*sriovv1.InterfaceExt, len(nodeState.Status.Interfaces))
 	for i := range nodeState.Status.Interfaces {
@@ -427,6 +428,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 	// Build desired bridge configs — one bridge per NIC
 	// Use ConfigureBridges from sriov-network-operator to manage them via OVSDB.
 	brName := fmt.Sprintf(railBridgeTemplate, rt.Name)
+	log.Info("createXPlaneBridges(): creating rail bridge", "bridge", brName)
 	if _, err := r.exec.Execute(fmt.Sprintf(
 		"ovs-vsctl --may-exist add-br %s -- set bridge %s datapath_type=%s fail-mode=standalone"+
 			" -- br-set-external-id %s bridge-id %s",
@@ -439,6 +441,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 	// has no single physical uplink, so it cannot be created via ConfigureBridges.
 
 	for idx, pfName := range rt.NicSelector.PfNames {
+		log.Info("createXPlaneBridges(): creating port", "bridge", xplaneBridge, "PF", pfName, "Rail Topology", rt.Name)
 		if _, err := r.exec.Execute(fmt.Sprintf(
 			"ovs-vsctl --may-exist add-port %s %s"+
 				" -- set Interface %s"+
@@ -446,7 +449,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 				" type=doca"+
 				" external_ids:xplane-plane-id=%d"+
 				" external_ids:xplane-group-id=%s"+
-				" external_ids:xplane-uplink=true",
+				" external_ids:xplane-uplink=true"+
+				" options:dpdk-lsc-interrupt=true",
 			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name,
 		)); err != nil {
 			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
@@ -542,6 +546,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 			if len(rt.NicSelector.PfNames) > 1 {
 				r.cleanupXPlaneBridges(ctx, &rt)
 			}
+			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, policy.Name); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -600,7 +607,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 			NodeSelector: nodeSelector,
 			RdmaMode:     "exclusive",
 			OvsHardwareOffloadConfig: sriovv1.OvsHardwareOffloadConfig{
-				Name: "otherConfig",
+				Name: "",
 				OvsConfig: map[string]string{
 					"doca-init":          "true",
 					"hw-offload":         "true",
