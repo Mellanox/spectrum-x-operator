@@ -58,6 +58,8 @@ spec:
             runAsUser: 0
             runAsGroup: 0
             capabilities:
+              add:
+                - "NET_RAW"
               drop:
                 - "ALL"
           volumeMounts:
