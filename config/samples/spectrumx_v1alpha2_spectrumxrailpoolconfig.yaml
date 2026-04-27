@@ -1,4 +1,4 @@
-apiVersion: spectrumx.nvidia.com/v1alpha1
+apiVersion: spectrumx.nvidia.com/v1alpha2
 kind: SpectrumXRailPoolConfig
 metadata:
   labels:
