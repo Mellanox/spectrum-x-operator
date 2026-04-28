@@ -7,7 +7,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/k8snetworkplumbingwg/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
-	github.com/onsi/ginkgo/v2 v2.28.1
+	github.com/onsi/ginkgo/v2 v2.28.2
 	github.com/onsi/gomega v1.39.1
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
