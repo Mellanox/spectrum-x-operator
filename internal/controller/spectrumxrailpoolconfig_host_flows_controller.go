@@ -64,7 +64,7 @@ const (
 	sriovNodePolicyType     = "SriovNetworkNodePolicy"
 	sriovNetworkPoolConfig  = "SriovNetworkPoolConfig"
 	sriovOVSNetworkType     = "OVSNetwork"
-	ovsDataPathType         = "doca"
+	ovsDataPathType         = "netdev"
 	ovsNetworkInterfaceType = "dpdk"
 )
 
@@ -449,8 +449,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 				" type=doca"+
 				" external_ids:xplane-plane-id=%d"+
 				" external_ids:xplane-group-id=%s"+
-				" external_ids:xplane-uplink=true"+
-				" options:dpdk-lsc-interrupt=true",
+				" external_ids:xplane-uplink=true",
 			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name,
 		)); err != nil {
 			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
