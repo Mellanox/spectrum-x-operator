@@ -18,6 +18,7 @@ package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
@@ -56,6 +57,10 @@ type SpectrumXRailPoolConfigSpec struct {
 	// +kubebuilder:validation:Optional
 	// NodeSelector specifies a selector for Spectrum-X nodes
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// +kubebuilder:default:=1
+	// maxUnavailable defines either an integer number or percentage
+	// of nodes in the pool that can be configured in a parallel.
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 	// Namespace of the NetworkAttachmentDefinition custom resource
 	NetworkNamespace string `json:"networkNamespace,omitempty"`
 	// +kubebuilder:validation:Minimum=1
