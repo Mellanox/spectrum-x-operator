@@ -44,6 +44,15 @@ spec:
               draEnabled:
                 default: true
                 type: boolean
+              maxUnavailable:
+                anyOf:
+                - type: integer
+                - type: string
+                default: 1
+                description: |-
+                  maxUnavailable defines either an integer number or percentage
+                  of nodes in the pool that can be configured in a parallel.
+                x-kubernetes-int-or-string: true
               networkNamespace:
                 description: Namespace of the NetworkAttachmentDefinition custom resource
                 type: string
