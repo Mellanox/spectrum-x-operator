@@ -601,8 +601,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 			Namespace: rpc.Namespace,
 		},
 		Spec: sriovv1.SriovNetworkPoolConfigSpec{
-			NodeSelector: nodeSelector,
-			RdmaMode:     "exclusive",
+			NodeSelector:   nodeSelector,
+			RdmaMode:       "exclusive",
+			MaxUnavailable: rpc.Spec.MaxUnavailable,
 			OvsHardwareOffloadConfig: sriovv1.OvsHardwareOffloadConfig{
 				Name: "",
 				OvsConfig: map[string]string{
