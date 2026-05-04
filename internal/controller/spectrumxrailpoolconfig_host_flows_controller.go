@@ -625,7 +625,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 	}
 	nodeSelector := spec.NodeSelector
 
-	devlinkParams := []sriovv1.DevlinkParam{{Name: "esw_multiport", Value: "true", Cmode: "runtime", ApplyOn: "PF"}}
+	// Spectrum-X requires hardware-managed flow steering (hmfs) on both SW PLB and HW multiplane.
+	// HW multiplane additionally requires multiport e-switch.
+	flowSteeringParam := sriovv1.DevlinkParam{Name: "flow_steering_mode", Value: "hmfs", Cmode: "runtime", ApplyOn: "PF"}
+	eswMultiportParam := sriovv1.DevlinkParam{Name: "esw_multiport", Value: "true", Cmode: "runtime", ApplyOn: "PF"}
 
 	nodePolicy := &sriovv1.SriovNetworkNodePolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -646,9 +649,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 	}
 	if hardwarePLB {
 		nodePolicy.Spec.DevlinkParams = sriovv1.DevlinkParams{
-			Params: devlinkParams,
+			Params: []sriovv1.DevlinkParam{eswMultiportParam, flowSteeringParam},
 		}
 	} else {
+		nodePolicy.Spec.DevlinkParams = sriovv1.DevlinkParams{
+			Params: []sriovv1.DevlinkParam{flowSteeringParam},
+		}
 		bridge := &sriovv1.Bridge{
 			GroupingPolicy: "perPF",
 			OVS: &sriovv1.OVSConfig{
