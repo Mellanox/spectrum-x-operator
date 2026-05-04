@@ -688,6 +688,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 		ipam = fmt.Sprintf(`{"type": "nv-ipam","poolName": %q, "poolType": "cidrpool"}`, rt.CidrPoolRef)
 	}
 
+	rdmDeviceName := fmt.Sprintf("rdma_%s", rt.Name)
+
 	ovsNetwork := &sriovv1.OVSNetwork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rt.Name,
@@ -699,7 +701,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 			NetworkNamespace:  spec.NetworkNamespace,
 			MTU:               uint(rt.MTU), //nolint:gosec // MTU is always non-negative
 			IPAM:              ipam,
-			MetaPluginsConfig: fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}}`, rdmaQoSToS, rdmaQoSTC),
+			MetaPluginsConfig: fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}, "args": {"cni": {"rdmaDeviceName": "%s"}}}`, rdmaQoSToS, rdmaQoSTC, rdmDeviceName),
 		},
 	}
 	if addBridge {
