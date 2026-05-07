@@ -82,7 +82,7 @@ const (
 
 const (
 	rdmaQoSToS = 96
-	rdmaQoSTC  = 102
+	rdmaQoSTC  = 96
 )
 
 // SpectrumXRailPoolConfigHostFlowsReconciler reconciles a SpectrumXRailPoolConfig object
