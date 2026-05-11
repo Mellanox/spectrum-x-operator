@@ -34,6 +34,15 @@ type NicSelector struct {
 	PfNames []string `json:"pfNames"`
 }
 
+type QoS struct {
+	// Network QoS Type of Service
+	// +kubebuilder:default:=96
+	RdmaQoSToS int `json:"rdmaQoSToS"`
+	// Network QoS TC
+	// +kubebuilder:default:=102
+	RdmaQoSTC int `json:"rdmaQoSTC"`
+}
+
 // +kubebuilder:validation:XValidation:rule="!has(self.cidrPoolRef) || !has(self.ipam)",message="Only one of cidrPoolRef or ipam can be specified"
 type RailTopology struct {
 	// Rail topology name
@@ -48,6 +57,8 @@ type RailTopology struct {
 	// MTU
 	// +kubebuilder:validation:Minimum=0
 	MTU int `json:"mtu"`
+	// Network QoS settings
+	QoS QoS `json:"qos"`
 }
 
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
