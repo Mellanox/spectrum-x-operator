@@ -131,6 +131,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) (ctrl.Result, error) {
+	log.FromContext(ctx).V(1).Info("Reconcile called", "name", rpc.Name, "namespace", rpc.Namespace)
 	err := r.doReconcile(ctx, rpc)
 	if apierrors.IsConflict(err) {
 		return ctrl.Result{Requeue: true}, nil
@@ -140,14 +141,17 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Conte
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
 	log := log.FromContext(ctx)
+	log.V(1).Info("doReconcile started", "name", rpc.Name, "namespace", rpc.Namespace)
 
 	if !controllerutil.ContainsFinalizer(rpc, finalizerName) {
+		log.V(1).Info("adding finalizer", "finalizer", finalizerName)
 		patch := client.MergeFrom(rpc.DeepCopy())
 		controllerutil.AddFinalizer(rpc, finalizerName)
 		return r.Patch(ctx, rpc, patch)
 	}
 
 	if !rpc.DeletionTimestamp.IsZero() {
+		log.V(1).Info("object is being deleted, cleaning up rail topology resources", "name", rpc.Name)
 		for _, rt := range rpc.Spec.RailTopology {
 			if len(rt.NicSelector.PfNames) > 1 {
 				r.cleanupXPlaneBridges(ctx, &rt)
@@ -157,12 +161,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 				return err
 			}
 		}
+		log.V(1).Info("removing finalizer", "finalizer", finalizerName)
 		patch := client.MergeFrom(rpc.DeepCopy())
 		controllerutil.RemoveFinalizer(rpc, finalizerName)
 		return r.Patch(ctx, rpc, patch)
 	}
 
 	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
+		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
 		patch := client.MergeFrom(rpc.DeepCopy())
 		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
 		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
@@ -175,14 +181,16 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	}
 
 	ownerLabels := map[string]string{labelOwnerName: rpc.Name}
-	poolConfig := r.generateSRIOVNetworkPoolConfig(rpc)
+	poolConfig := r.generateSRIOVNetworkPoolConfig(ctx, rpc)
 	poolConfig.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovNetworkPoolConfig))
 	poolConfig.Labels = ownerLabels
+	log.V(1).Info("patching SriovNetworkPoolConfig", "name", poolConfig.Name)
 	if err := r.Patch(ctx, poolConfig, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", poolConfig.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(poolConfig), err)
 	}
 
 	for _, rt := range rpc.Spec.RailTopology {
+		log.V(1).Info("reconciling rail topology", "railTopology", rt.Name)
 		err := r.reconcileRailTopology(ctx, rpc, rt)
 		if err != nil {
 			log.Error(err, "failed to reconcile rail topology", "rail topology", rt)
@@ -200,10 +208,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return err
 	}
 
+	log.V(1).Info("doReconcile completed", "name", rpc.Name)
 	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, rt v1alpha2.RailTopology) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("reconcileRailTopology started", "railTopology", rt.Name, "pfNames", rt.NicSelector.PfNames)
+
 	spec := &rpc.Spec
 	namespace := rpc.Namespace
 	if len(rt.NicSelector.PfNames) == 0 {
@@ -215,39 +227,49 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	var policy *sriovv1.SriovNetworkNodePolicy
 	if len(rt.NicSelector.PfNames) == 1 {
 		// sw plb or no multiplane
-		policy = r.generateSRIOVNetworkNodePolicy(spec, &rt, false, namespace)
+		log.V(1).Info("generating SriovNetworkNodePolicy for SW PLB", "railTopology", rt.Name)
+		policy = r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, false, namespace)
 	} else {
 		// hw multiplane
-		policy = r.generateSRIOVNetworkNodePolicy(spec, &rt, true, namespace)
+		log.V(1).Info("generating SriovNetworkNodePolicy for HW multiplane", "railTopology", rt.Name)
+		policy = r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, true, namespace)
 	}
 	policy.Labels = ownerLabels
 
+	log.V(1).Info("patching SriovNetworkNodePolicy", "name", policy.Name)
 	if err := r.Patch(ctx, policy, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
 	}
 
 	addBridge := len(rt.NicSelector.PfNames) > 1
-	ovsNetwork := r.generateOVSNetwork(spec, &rt, addBridge, namespace)
+	ovsNetwork := r.generateOVSNetwork(ctx, spec, &rt, addBridge, namespace)
 	ovsNetwork.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovOVSNetworkType))
 	ovsNetwork.Labels = ownerLabels
+	log.V(1).Info("patching OVSNetwork", "name", ovsNetwork.Name, "addBridge", addBridge)
 	if err := r.Patch(ctx, ovsNetwork, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", ovsNetwork.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(ovsNetwork), err)
 	}
 
 	if len(rt.NicSelector.PfNames) > 1 {
+		log.V(1).Info("configuring xplane for rail topology", "railTopology", rt.Name)
 		if err := r.configureXPlane(ctx, rpc, spec, &rt, namespace); err != nil {
 			return fmt.Errorf("failed to configure xplane for rail topology %s: %w", rt.Name, err)
 		}
 	}
 
+	log.V(1).Info("reconcileRailTopology completed", "railTopology", rt.Name)
 	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, namespace string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("configureXPlane started", "railTopology", rt.Name, "nodeName", r.nodeName)
+
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
+	log.V(1).Info("listed nodes for xplane configuration", "count", len(nodeList.Items))
 
 	var localNodeState *sriovv1.SriovNetworkNodeState
 
@@ -266,25 +288,28 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 	}
 
 	if localNodeState == nil {
-		// local node is not part of this pool
+		log.V(1).Info("local node is not part of this pool, skipping xplane configuration", "nodeName", r.nodeName)
 		return nil
 	}
 
+	log.V(1).Info("creating xplane bridges", "railTopology", rt.Name)
 	err := r.createXPlaneBridges(ctx, rt, localNodeState)
 	if err != nil {
 		return fmt.Errorf("failed to create X-Plane bridges: %w", err)
 	}
+	log.V(1).Info("deploying xplane", "namespace", namespace)
 	if err := r.deployXplane(ctx, r.Client, rpc, r.Scheme, namespace, config.FromEnv()); err != nil {
 		return fmt.Errorf("failed to deploy xplane: %w", err)
 	}
 
+	log.V(1).Info("configureXPlane completed", "railTopology", rt.Name)
 	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Context, client client.Client, poolConfig *v1alpha2.SpectrumXRailPoolConfig,
 	scheme *runtime.Scheme, namespace string, cfg *config.OperatorConfig,
 ) error {
-	logger := log.Log.WithName("deployXplane")
+	logger := log.FromContext(ctx)
 	logger.Info("Deploying Xplane Service")
 	data := render.MakeRenderData()
 	data.Data["Namespace"] = namespace
@@ -307,7 +332,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 }
 
 func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha2.SpectrumXRailPoolConfig, obj *uns.Unstructured) error {
-	logger := log.Log.WithName("syncDsObject")
+	logger := log.FromContext(ctx)
 	kind := obj.GetKind()
 	logger.V(1).Info("Start to sync Objects", "Kind", kind)
 	switch kind {
@@ -341,7 +366,7 @@ func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Sch
 }
 
 func syncDaemonSet(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha2.SpectrumXRailPoolConfig, in *appsv1.DaemonSet) error {
-	logger := log.Log.WithName("syncDaemonSet")
+	logger := log.FromContext(ctx)
 	logger.V(1).Info("Start to sync DaemonSet", "Namespace", in.Namespace, "Name", in.Name)
 	var err error
 
@@ -486,6 +511,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 // deleteXplane controls whether br-xplane itself is deleted (only on the last rail topology).
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology) {
 	log := log.FromContext(ctx)
+	log.V(1).Info("cleanupXPlaneBridges started", "railTopology", rt.Name)
 	railBridge := fmt.Sprintf(railBridgeTemplate, rt.Name)
 	if _, err := r.exec.Execute(fmt.Sprintf(
 		"ovs-vsctl --if-exists del-br %s", railBridge,
@@ -500,25 +526,35 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx co
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources(ctx context.Context, namespace, rtName string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("deleteRailTopologyResources started", "namespace", namespace, "railTopology", rtName)
+
 	policy := &sriovv1.SriovNetworkNodePolicy{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
+	log.V(1).Info("deleting SriovNetworkNodePolicy", "name", rtName)
 	if err := r.Delete(ctx, policy); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to delete SriovNetworkNodePolicy %s/%s: %w", namespace, rtName, err)
 	}
 
 	poolConfig := &sriovv1.SriovNetworkPoolConfig{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
+	log.V(1).Info("deleting SriovNetworkPoolConfig", "name", rtName)
 	if err := r.Delete(ctx, poolConfig); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to delete SriovNetworkPoolConfig %s/%s: %w", namespace, rtName, err)
 	}
 
 	ovsNetwork := &sriovv1.OVSNetwork{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
+	log.V(1).Info("deleting OVSNetwork", "name", rtName)
 	if err := r.Delete(ctx, ovsNetwork); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to delete OVSNetwork %s/%s: %w", namespace, rtName, err)
 	}
 
+	log.V(1).Info("deleteRailTopologyResources completed", "namespace", namespace, "railTopology", rtName)
 	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("deleteRemovedRailTopologies started", "name", rpc.Name)
+
 	currentTopologies := make(map[string]struct{}, len(rpc.Spec.RailTopology))
 	for _, rt := range rpc.Spec.RailTopology {
 		currentTopologies[rt.Name] = struct{}{}
@@ -531,9 +567,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 	); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to list SriovNetworkNodePolicies: %w", err)
 	}
+	log.V(1).Info("listed owned SriovNetworkNodePolicies", "count", len(policyList.Items))
 
 	for _, policy := range policyList.Items {
 		if _, exists := currentTopologies[policy.Name]; !exists {
+			log.V(1).Info("deleting removed rail topology", "railTopology", policy.Name)
 			rt := v1alpha2.RailTopology{
 				Name: policy.Name,
 				NicSelector: v1alpha2.NicSelector{
@@ -549,14 +587,19 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 		}
 	}
 
+	log.V(1).Info("deleteRemovedRailTopologies completed", "name", rpc.Name)
 	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) updateSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("updateSyncStatus started", "name", rpc.Name)
+
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(rpc.Spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
+	log.V(1).Info("listed nodes for sync status update", "count", len(nodeList.Items))
 
 	newStatus := v1alpha2.SyncStatusSucceeded
 	for _, node := range nodeList.Items {
@@ -564,11 +607,13 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) updateSyncStatus(ctx contex
 		nsn := types.NamespacedName{Name: node.Name, Namespace: rpc.Namespace}
 		if err := r.Get(ctx, nsn, nodeState); err != nil {
 			if apierrors.IsNotFound(err) {
+				log.V(1).Info("SriovNetworkNodeState not found, staying InProgress", "node", node.Name)
 				newStatus = v1alpha2.SyncStatusInProgress
 				continue
 			}
 			return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
 		}
+		log.V(1).Info("node sync status", "node", node.Name, "syncStatus", nodeState.Status.SyncStatus)
 		switch nodeState.Status.SyncStatus {
 		case v1alpha2.SyncStatusFailed:
 			return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
@@ -577,11 +622,15 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) updateSyncStatus(ctx contex
 		}
 	}
 
+	log.V(1).Info("patching sync status", "newStatus", newStatus)
 	return r.patchSyncStatus(ctx, rpc, newStatus)
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newStatus string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("patchSyncStatus called", "name", rpc.Name, "currentStatus", rpc.Status.SyncStatus, "newStatus", newStatus, "observedGeneration", rpc.Status.ObservedGeneration, "generation", rpc.Generation)
 	if rpc.Status.SyncStatus == newStatus && rpc.Status.ObservedGeneration == rpc.Generation {
+		log.V(1).Info("sync status unchanged, skipping patch", "name", rpc.Name)
 		return nil
 	}
 	patch := client.MergeFrom(rpc.DeepCopy())
@@ -590,7 +639,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context
 	return r.Status().Patch(ctx, rpc, patch)
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(rpc *v1alpha2.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
 	nodeSelector := &metav1.LabelSelector{
 		MatchLabels: rpc.Spec.NodeSelector,
 	}
@@ -616,10 +665,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 		},
 	}
 
+	log.FromContext(ctx).V(1).Info("generated SriovNetworkPoolConfig", "object", nodePool)
 	return nodePool
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
 	nicSelector := &sriovv1.SriovNetworkNicSelector{
 		PfNames: rt.NicSelector.PfNames,
 	}
@@ -676,10 +726,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 
 	nodePolicy.ManagedFields = nil
 	nodePolicy.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovNodePolicyType))
+	log.FromContext(ctx).V(1).Info("generated SriovNetworkNodePolicy", "object", nodePolicy)
 	return nodePolicy
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, namespace string) *sriovv1.OVSNetwork {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, namespace string) *sriovv1.OVSNetwork {
 	var ipam string
 	switch {
 	case rt.IPAM != "":
@@ -707,6 +758,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 	if addBridge {
 		ovsNetwork.Spec.Bridge = fmt.Sprintf(railBridgeTemplate, rt.Name)
 	}
+	log.FromContext(ctx).V(1).Info("generated OVSNetwork", "object", ovsNetwork)
 	return ovsNetwork
 }
 
