@@ -17,14 +17,15 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	uns "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	uns "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,12 +38,13 @@ import (
 var _ = Describe("generateOVSNetwork", func() {
 	const namespace = "test-ns"
 
+	ctx := context.Background()
 	r := &SpectrumXRailPoolConfigHostFlowsReconciler{}
 
 	DescribeTable("MetaPluginsConfig rdma plugin",
 		func(rtName string, addVRF bool) {
 			rt := &v1alpha2.RailTopology{Name: rtName, MTU: 9000}
-			ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
+			ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
 			Expect(ovs.Spec.MetaPluginsConfig).To(ContainSubstring(`"type": "rdma"`))
 			Expect(ovs.Spec.MetaPluginsConfig).To(ContainSubstring(fmt.Sprintf(`"rdmaDeviceName": "rdma_%s"`, rtName)))
 		},
@@ -53,7 +55,7 @@ var _ = Describe("generateOVSNetwork", func() {
 	DescribeTable("VRF meta-plugin",
 		func(addVRF bool, expectVRF bool) {
 			rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000}
-			ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
+			ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
 			if expectVRF {
 				Expect(ovs.Spec.MetaPluginsConfig).To(ContainSubstring(`"type": "vrf"`))
 				Expect(ovs.Spec.MetaPluginsConfig).To(ContainSubstring(`"vrfname": "rail-1"`))
@@ -67,14 +69,14 @@ var _ = Describe("generateOVSNetwork", func() {
 
 	It("VRF vrfname matches the rail topology name", func() {
 		rt := &v1alpha2.RailTopology{Name: "my-custom-rail", MTU: 9000}
-		ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, true, namespace)
+		ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, true, namespace)
 		Expect(ovs.Spec.MetaPluginsConfig).To(ContainSubstring(`"vrfname": "my-custom-rail"`))
 	})
 
 	DescribeTable("bridge field",
 		func(addBridge bool, expectedBridge string) {
 			rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000}
-			ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, addBridge, false, namespace)
+			ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, addBridge, false, namespace)
 			Expect(ovs.Spec.Bridge).To(Equal(expectedBridge))
 		},
 		Entry("bridge set when addBridge=true", true, "br-rail-rail-1"),
@@ -84,7 +86,7 @@ var _ = Describe("generateOVSNetwork", func() {
 	DescribeTable("IPAM configuration",
 		func(cidrPoolRef, ipam, expectedIPAM string) {
 			rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000, CidrPoolRef: cidrPoolRef, IPAM: ipam}
-			ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
+			ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
 			Expect(ovs.Spec.IPAM).To(Equal(expectedIPAM))
 		},
 		Entry("empty when neither set", "", "", ""),
@@ -95,7 +97,7 @@ var _ = Describe("generateOVSNetwork", func() {
 
 	It("sets object metadata correctly", func() {
 		rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000}
-		ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
+		ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
 		Expect(ovs.Name).To(Equal("rail-1"))
 		Expect(ovs.Namespace).To(Equal(namespace))
 		Expect(ovs.Spec.ResourceName).To(Equal("rail-1"))
@@ -103,7 +105,7 @@ var _ = Describe("generateOVSNetwork", func() {
 
 	It("sets MTU and interface type", func() {
 		rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000}
-		ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
+		ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, false, namespace)
 		Expect(ovs.Spec.MTU).To(Equal(uint(9000)))
 		Expect(ovs.Spec.InterfaceType).To(Equal(ovsNetworkInterfaceType))
 	})
@@ -114,8 +116,8 @@ var _ = Describe("generateOVSNetwork", func() {
 	DescribeTable("MetaPluginsConfig produces valid JSON array elements",
 		func(addVRF bool) {
 			rt := &v1alpha2.RailTopology{Name: "rail-1", MTU: 9000}
-			ovs := r.generateOVSNetwork(&v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
-			Expect(json.Valid([]byte("[" + ovs.Spec.MetaPluginsConfig + "]"))).To(BeTrue(),
+			ovs := r.generateOVSNetwork(ctx, &v1alpha2.SpectrumXRailPoolConfigSpec{}, rt, false, addVRF, namespace)
+			Expect(json.Valid([]byte("["+ovs.Spec.MetaPluginsConfig+"]"))).To(BeTrue(),
 				"MetaPluginsConfig must be valid JSON array elements; got: %s", ovs.Spec.MetaPluginsConfig)
 		},
 		Entry("single plugin (addVRF=false)", false),
