@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+
 	"github.com/go-logr/logr"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -153,22 +154,18 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return r.Patch(ctx, rpc, patch)
 	}
 
-	err, done := r.handleDeletion(ctx, rpc, log)
+	done, err := r.handleDeletion(ctx, rpc, log)
 	if done {
 		return err
 	}
 
-	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
-		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
-		patch := client.MergeFrom(rpc.DeepCopy())
-		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
-		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
-			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-			if e != nil {
-				return e
-			}
-			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
-		}
+	if rpc.Status.SyncStatus == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
+		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
+		return nil
+	}
+	err = r.setInProgressStatus(ctx, rpc, log)
+	if err != nil {
+		return err
 	}
 
 	if len(rpc.Spec.RailTopology) < 1 {
@@ -187,14 +184,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	if err := r.Patch(ctx, poolConfig, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
 		if e != nil {
-			return e
+			log.Error(e, "failed to patch sync status to Failed")
 		}
 		return fmt.Errorf("error while patching %s %s: %w", poolConfig.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(poolConfig), err)
 	}
 	if err := r.reconcileRailTopologies(ctx, rpc); err != nil {
 		e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
 		if e != nil {
-			return e
+			log.Error(e, "failed to patch sync status to Failed")
 		}
 		return err
 	}
@@ -202,7 +199,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	if err := r.deleteRemovedRailTopologies(ctx, rpc); err != nil {
 		e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
 		if e != nil {
-			return e
+			log.Error(e, "failed to patch sync status to Failed")
 		}
 		log.Error(err, "failed to delete removed rail topologies")
 		return err
@@ -211,7 +208,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	if err := r.processNodeStatus(ctx, rpc); err != nil {
 		e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
 		if e != nil {
-			return e
+			log.Error(e, "failed to patch sync status to Failed")
 		}
 		log.Error(err, "failed to update sync status")
 		return err
@@ -221,7 +218,23 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) (error, bool) {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) setInProgressStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) error {
+	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
+		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
+		patch := client.MergeFrom(rpc.DeepCopy())
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
+		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
+			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
+			if e != nil {
+				return e
+			}
+			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) (bool, error) {
 	if !rpc.DeletionTimestamp.IsZero() {
 		log.V(1).Info("object is being deleted, cleaning up rail topology resources", "name", rpc.Name)
 		for _, rt := range rpc.Spec.RailTopology {
@@ -232,17 +245,17 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
 				e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
 				if e != nil {
-					return e, true
+					return true, e
 				}
-				return err, true
+				return true, err
 			}
 		}
 		log.V(1).Info("removing finalizer", "finalizer", finalizerName)
 		patch := client.MergeFrom(rpc.DeepCopy())
 		controllerutil.RemoveFinalizer(rpc, finalizerName)
-		return r.Patch(ctx, rpc, patch), true
+		return true, r.Patch(ctx, rpc, patch)
 	}
-	return nil, false
+	return false, nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopologies(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
@@ -261,6 +274,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopologies(ctx
 	}
 	return nil
 }
+
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, rt v1alpha2.RailTopology) error {
 	log := log.FromContext(ctx)
 	log.V(1).Info("reconcileRailTopology started", "railTopology", rt.Name, "pfNames", rt.NicSelector.PfNames)
@@ -624,7 +638,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 	}
 
 	policyList := &sriovv1.SriovNetworkNodePolicyList{}
-	if err := r.List(ctx, policyList,
+	if err := r.List(
+		ctx, policyList,
 		client.InNamespace(rpc.Namespace),
 		client.MatchingLabels{labelOwnerName: rpc.Name},
 	); err != nil && !apierrors.IsNotFound(err) {
