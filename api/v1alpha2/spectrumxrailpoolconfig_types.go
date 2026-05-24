@@ -79,6 +79,8 @@ type SpectrumXRailPoolConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.syncStatus`,priority=0
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,priority=0
 
 // SpectrumXRailPoolConfig is the Schema for the spectrumxrailpoolconfigs API.
 type SpectrumXRailPoolConfig struct {
