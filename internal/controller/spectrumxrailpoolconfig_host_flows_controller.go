@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+
 	"github.com/go-logr/logr"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -156,17 +157,13 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return err
 	}
 
-	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
-		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
-		patch := client.MergeFrom(rpc.DeepCopy())
-		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
-		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
-			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-			if e != nil {
-				return e
-			}
-			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
-		}
+	if rpc.Status.SyncStatus == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
+		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
+		return nil
+	}
+	err = r.setInProgressStatus(ctx, rpc, log)
+	if err != nil {
+		return err
 	}
 
 	if len(rpc.Spec.RailTopology) < 1 {
@@ -216,6 +213,22 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 	}
 
 	log.V(1).Info("doReconcile completed", "name", rpc.Name)
+	return nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) setInProgressStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) error {
+	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
+		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
+		patch := client.MergeFrom(rpc.DeepCopy())
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
+		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
+			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
+			if e != nil {
+				return e
+			}
+			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
+		}
+	}
 	return nil
 }
 
