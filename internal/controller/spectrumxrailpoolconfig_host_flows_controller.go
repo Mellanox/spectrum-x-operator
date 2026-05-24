@@ -272,6 +272,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopologies(ctx
 	}
 	return nil
 }
+
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, rt v1alpha2.RailTopology) error {
 	log := log.FromContext(ctx)
 	log.V(1).Info("reconcileRailTopology started", "railTopology", rt.Name, "pfNames", rt.NicSelector.PfNames)
