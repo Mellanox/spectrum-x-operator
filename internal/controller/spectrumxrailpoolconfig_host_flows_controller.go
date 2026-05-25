@@ -162,6 +162,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return r.Patch(ctx, rpc, patch)
 	}
 
+	if rpc.Status.SyncStatus == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
+		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
+		return nil
+	}
+
 	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
 		patch := client.MergeFrom(rpc.DeepCopy())
 		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
