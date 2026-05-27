@@ -52,6 +52,7 @@ import (
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
+	"github.com/Mellanox/spectrum-x-operator/pkg/state"
 )
 
 const (
@@ -157,7 +158,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return err
 	}
 
-	if rpc.Status.SyncStatus == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
+	current, err := state.GetNodeState(rpc.Status.NodeStates, r.nodeName)
+
+	if err == nil && current.State == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
 		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
 		return nil
 	}
@@ -689,15 +692,43 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) processNodeStatus(ctx conte
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newStatus string) error {
 	log := log.FromContext(ctx)
-	log.V(1).Info("patchSyncStatus called", "name", rpc.Name, "currentStatus", rpc.Status.SyncStatus, "newStatus", newStatus, "observedGeneration", rpc.Status.ObservedGeneration, "generation", rpc.Generation)
-	if rpc.Status.SyncStatus == newStatus && rpc.Status.ObservedGeneration == rpc.Generation {
-		log.V(1).Info("sync status unchanged, skipping patch", "name", rpc.Name)
+	newState := v1alpha2.State(newStatus)
+
+	current, err := state.GetNodeState(rpc.Status.NodeStates, r.nodeName)
+	if err == nil && current.State == newState && rpc.Status.ObservedGeneration == rpc.Generation {
+		log.V(1).Info("node state unchanged, skipping patch", "name", rpc.Name, "node", r.nodeName)
 		return nil
 	}
+
+	log.V(1).Info("patchSyncStatus called", "name", rpc.Name, "node", r.nodeName, "newState", newState, "observedGeneration", rpc.Status.ObservedGeneration, "generation", rpc.Generation)
 	patch := client.MergeFrom(rpc.DeepCopy())
-	rpc.Status.SyncStatus = newStatus
+	if current != nil {
+		current.State = newState
+	} else {
+		rpc.Status.NodeStates = append(rpc.Status.NodeStates, v1alpha2.NodeState{
+			Name:  r.nodeName,
+			State: newState,
+		})
+	}
+
+	if allNodeStatesSucceeded(rpc.Status.NodeStates) {
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusSucceeded
+	}
+
 	rpc.Status.ObservedGeneration = rpc.Generation
 	return r.Status().Patch(ctx, rpc, patch)
+}
+
+func allNodeStatesSucceeded(states []v1alpha2.NodeState) bool {
+	if len(states) == 0 {
+		return false
+	}
+	for i := range states {
+		if states[i].State != v1alpha2.SyncStatusSucceeded {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {

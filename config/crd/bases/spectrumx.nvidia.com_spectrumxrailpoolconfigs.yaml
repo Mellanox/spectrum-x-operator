@@ -120,6 +120,35 @@ spec:
             description: SpectrumXRailPoolConfigStatus defines the observed state
               of SpectrumXRailPoolConfig.
             properties:
+              nodeStates:
+                description: NodeStates provide a finer view of the observed state
+                items:
+                  description: NodeState defines a finer-grained view of the observed
+                    state of NicClusterPolicy
+                  properties:
+                    message:
+                      description: |-
+                        Message is a human-readable message indicating details about why
+                        the state is in this condition
+                      type: string
+                    name:
+                      description: Name of the deployed component this state refers
+                        to
+                      type: string
+                    state:
+                      description: The state of the node configuration. ("Unknown",
+                        "InProgress", "Failed", "Succeeded")
+                      enum:
+                      - Unknown
+                      - InProgress
+                      - Failed
+                      - Succeeded
+                      type: string
+                  required:
+                  - name
+                  - state
+                  type: object
+                type: array
               observedGeneration:
                 format: int64
                 type: integer
