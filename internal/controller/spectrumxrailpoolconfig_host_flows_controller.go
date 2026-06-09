@@ -361,12 +361,28 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 	if err != nil {
 		return fmt.Errorf("failed to create X-Plane bridges: %w", err)
 	}
+
+	log.V(1).Info("restarting ovs service")
+	if err := r.restartOVSService(ctx); err != nil {
+		return fmt.Errorf("failed to restart ovs service: %w", err)
+	}
+
 	log.V(1).Info("deploying xplane", "namespace", namespace)
 	if err := r.deployXplane(ctx, r.Client, rpc, r.Scheme, namespace, config.FromEnv()); err != nil {
 		return fmt.Errorf("failed to deploy xplane: %w", err)
 	}
 
 	log.V(1).Info("configureXPlane completed", "railTopology", rt.Name)
+	return nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) restartOVSService(ctx context.Context) error {
+	log := log.FromContext(ctx)
+	out, err := r.exec.ExecutePrivileged("systemctl restart ovs-vswitchd")
+	if err != nil {
+		return fmt.Errorf("systemctl restart ovs-vswitchd failed: %w: %s", err, out)
+	}
+	log.V(1).Info("ovs service restarted")
 	return nil
 }
 
