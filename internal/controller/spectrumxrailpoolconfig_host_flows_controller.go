@@ -66,7 +66,7 @@ const (
 	sriovNetworkPoolConfig  = "SriovNetworkPoolConfig"
 	sriovOVSNetworkType     = "OVSNetwork"
 	ovsDataPathType         = "netdev"
-	ovsNetworkInterfaceType = "dpdk"
+	ovsNetworkInterfaceType = "doca"
 )
 
 const (
