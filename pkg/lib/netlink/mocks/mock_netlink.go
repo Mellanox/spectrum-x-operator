@@ -158,6 +158,20 @@ func (mr *MockNetlinkLibMockRecorder) IsLinkAdminStateUp(link interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsLinkAdminStateUp", reflect.TypeOf((*MockNetlinkLib)(nil).IsLinkAdminStateUp), link)
 }
 
+// IsLinkNoCarrier mocks base method.
+func (m *MockNetlinkLib) IsLinkNoCarrier(link netlink.Link) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsLinkNoCarrier", link)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsLinkNoCarrier indicates an expected call of IsLinkNoCarrier.
+func (mr *MockNetlinkLibMockRecorder) IsLinkNoCarrier(link interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsLinkNoCarrier", reflect.TypeOf((*MockNetlinkLib)(nil).IsLinkNoCarrier), link)
+}
+
 // LinkByName mocks base method.
 func (m *MockNetlinkLib) LinkByName(name string) (netlink.Link, error) {
 	m.ctrl.T.Helper()
@@ -171,6 +185,20 @@ func (m *MockNetlinkLib) LinkByName(name string) (netlink.Link, error) {
 func (mr *MockNetlinkLibMockRecorder) LinkByName(name interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkByName", reflect.TypeOf((*MockNetlinkLib)(nil).LinkByName), name)
+}
+
+// LinkSetDown mocks base method.
+func (m *MockNetlinkLib) LinkSetDown(link netlink.Link) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkSetDown", link)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LinkSetDown indicates an expected call of LinkSetDown.
+func (mr *MockNetlinkLibMockRecorder) LinkSetDown(link interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSetDown", reflect.TypeOf((*MockNetlinkLib)(nil).LinkSetDown), link)
 }
 
 // LinkSetUp mocks base method.

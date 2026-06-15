@@ -26,8 +26,10 @@ import (
 	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
+	"github.com/Mellanox/spectrum-x-operator/internal/vfstatefollower"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
+	netlinklib "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	env "github.com/caarlos0/env/v11"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -197,6 +199,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	vfFollower := &vfstatefollower.Monitor{
+		Client:       mgr.GetClient(),
+		NodeName:     Options.NodeName,
+		Netlink:      netlinklib.New(),
+		PollInterval: time.Second,
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -208,8 +217,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+	go vfFollower.Start(ctx)
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
