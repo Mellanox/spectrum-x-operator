@@ -39,8 +39,14 @@ type NetlinkLib interface {
 	// LinkSetUp enables the link device.
 	// Equivalent to: `ip link set $link up`
 	LinkSetUp(link Link) error
+	// LinkSetDown disables the link device.
+	// Equivalent to: `ip link set $link down`
+	LinkSetDown(link Link) error
 	// IsLinkAdminStateUp checks if the admin state of a link is up
 	IsLinkAdminStateUp(link Link) bool
+	// IsLinkNoCarrier reports whether the link has NO-CARRIER
+	// (OperState is OperDown or OperLowerLayerDown).
+	IsLinkNoCarrier(link Link) bool
 	// IPv4Addresses return the IPv4 addresses of a link
 	IPv4Addresses(link Link) ([]netlink.Addr, error)
 	// AddrDel delete an IP address from a link
@@ -66,9 +72,22 @@ func (w *libWrapper) LinkSetUp(link Link) error {
 	return netlink.LinkSetUp(link)
 }
 
+// LinkSetDown disables the link device.
+// Equivalent to: `ip link set $link down`
+func (w *libWrapper) LinkSetDown(link Link) error {
+	return netlink.LinkSetDown(link)
+}
+
 // IsLinkAdminStateUp checks if the admin state of a link is up
 func (w *libWrapper) IsLinkAdminStateUp(link Link) bool {
 	return link.Attrs().Flags&net.FlagUp == 1
+}
+
+// IsLinkNoCarrier reports whether the link has NO-CARRIER
+// (OperState is OperDown or OperLowerLayerDown).
+func (w *libWrapper) IsLinkNoCarrier(link Link) bool {
+	s := link.Attrs().OperState
+	return s == netlink.OperDown || s == netlink.OperLowerLayerDown
 }
 
 // IPv4Adresses return the IPv4 addresses of a link

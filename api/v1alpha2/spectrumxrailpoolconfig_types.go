@@ -54,6 +54,13 @@ type RailTopology struct {
 type SpectrumXRailPoolConfigSpec struct {
 	// +kubebuilder:default:=true
 	DraEnabled bool `json:"draEnabled,omitempty"`
+	// VFStateFollow enables mirroring the PF carrier state to VF representors.
+	// When all PFs of a topology report NO-CARRIER, their representors are set
+	// admin-down so pods receive a link-down notification.
+	// Defaults to true when not set.
+	// +kubebuilder:default:=true
+	// +optional
+	VFStateFollow *bool `json:"vfStateFollow,omitempty"`
 	// +kubebuilder:validation:Optional
 	// NodeSelector specifies a selector for Spectrum-X nodes
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
