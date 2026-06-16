@@ -26,8 +26,10 @@ import (
 	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
+	"github.com/Mellanox/spectrum-x-operator/internal/vfstatefollower"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
+	netlinklib "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	env "github.com/caarlos0/env/v11"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -196,6 +198,14 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "SpectrumXRailPoolConfig")
 		os.Exit(1)
 	}
+
+	vfFollower := &vfstatefollower.Monitor{
+		Client:       mgr.GetClient(),
+		NodeName:     Options.NodeName,
+		Netlink:      netlinklib.New(),
+		PollInterval: time.Second,
+	}
+	go vfFollower.Start(ctrl.SetupSignalHandler())
 
 	//+kubebuilder:scaffold:builder
 

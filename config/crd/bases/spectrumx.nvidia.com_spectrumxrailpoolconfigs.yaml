@@ -105,6 +105,14 @@ spec:
                     rule: '!has(self.cidrPoolRef) || !has(self.ipam)'
                 minItems: 1
                 type: array
+              vfStateFollow:
+                default: true
+                description: |-
+                  VFStateFollow enables mirroring the PF carrier state to VF representors.
+                  When all PFs of a topology report NO-CARRIER, their representors are set
+                  admin-down so pods receive a link-down notification.
+                  Defaults to true when not set.
+                type: boolean
             required:
             - numVfs
             - railTopology

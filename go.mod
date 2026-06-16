@@ -7,6 +7,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/k8snetworkplumbingwg/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
+	github.com/k8snetworkplumbingwg/sriovnet v1.2.0
 	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
 	github.com/vishvananda/netlink v1.3.1
@@ -77,7 +78,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/k8snetworkplumbingwg/govdpa v0.1.4 // indirect
 	github.com/k8snetworkplumbingwg/sriov-network-device-plugin v0.0.0-20221127172732-a5a7395122e3 // indirect
-	github.com/k8snetworkplumbingwg/sriovnet v1.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
