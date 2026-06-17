@@ -11,3 +11,11 @@ rules:
       - use
     resourceNames:
       - privileged
+  - apiGroups:
+      - nv-ipam.nvidia.com
+    resources:
+      - cidrpools
+    verbs:
+      - get
+      - list
+      - watch
