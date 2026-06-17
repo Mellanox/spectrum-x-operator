@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
@@ -120,6 +121,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=ovsnetworks,verbs=create;patch;get;list;watch;update;delete
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=sriovnetworknodestates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=nv-ipam.nvidia.com,resources=cidrpools,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -227,7 +229,21 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	}
 
 	addBridge := len(rt.NicSelector.PfNames) > 1
-	ovsNetwork := r.generateOVSNetwork(spec, &rt, addBridge, namespace)
+
+	addVRF := false
+	if rt.CidrPoolRef != "" {
+		isIPv6, err := r.isCidrPoolIPv6(ctx, rt.CidrPoolRef, namespace)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to check CIDRPool %s for IPv6: %w", rt.CidrPoolRef, err)
+			}
+			// CIDRPool not found: clear VRF and proceed so unrelated updates are not blocked.
+		} else {
+			addVRF = isIPv6
+		}
+	}
+
+	ovsNetwork := r.generateOVSNetwork(spec, &rt, addBridge, addVRF, namespace)
 	ovsNetwork.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovOVSNetworkType))
 	ovsNetwork.Labels = ownerLabels
 	if err := r.Patch(ctx, ovsNetwork, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
@@ -679,7 +695,49 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 	return nodePolicy
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, namespace string) *sriovv1.OVSNetwork {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cidrPoolToRailConfigs(ctx context.Context, obj client.Object) []reconcile.Request {
+	logger := log.FromContext(ctx)
+	list := &v1alpha2.SpectrumXRailPoolConfigList{}
+	if err := r.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
+		logger.Error(err, "failed to list SpectrumXRailPoolConfigs for CIDRPool", "cidrpool", obj.GetName())
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, rpc := range list.Items {
+		for _, rt := range rpc.Spec.RailTopology {
+			if rt.CidrPoolRef == obj.GetName() {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: rpc.Namespace, Name: rpc.Name},
+				})
+				break
+			}
+		}
+	}
+	return requests
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) isCidrPoolIPv6(ctx context.Context, name, namespace string) (bool, error) {
+	cidrPool := &uns.Unstructured{}
+	cidrPool.SetAPIVersion("nv-ipam.nvidia.com/v1alpha1")
+	cidrPool.SetKind("CIDRPool")
+	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, cidrPool); err != nil {
+		return false, fmt.Errorf("failed to get CIDRPool %s/%s: %w", namespace, name, err)
+	}
+	cidr, found, err := uns.NestedString(cidrPool.Object, "spec", "cidr")
+	if err != nil {
+		return false, fmt.Errorf("failed to read spec.cidr from CIDRPool %s/%s: %w", namespace, name, err)
+	}
+	if !found {
+		return false, fmt.Errorf("spec.cidr not found in CIDRPool %s/%s", namespace, name)
+	}
+	ip, _, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse CIDR %q from CIDRPool %s/%s: %w", cidr, namespace, name, err)
+	}
+	return ip.To4() == nil, nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, addVRF bool, namespace string) *sriovv1.OVSNetwork {
 	var ipam string
 	switch {
 	case rt.IPAM != "":
@@ -689,6 +747,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 	}
 
 	rdmDeviceName := fmt.Sprintf("rdma_%s", rt.Name)
+
+	metaPlugins := fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}, "args": {"cni": {"rdmaDeviceName": "%s"}}}`, rdmaQoSToS, rdmaQoSTC, rdmDeviceName)
+	if addVRF {
+		metaPlugins += fmt.Sprintf(`, {"type": "vrf", "vrfname": %q}`, rt.Name)
+	}
 
 	ovsNetwork := &sriovv1.OVSNetwork{
 		ObjectMeta: metav1.ObjectMeta{
@@ -701,7 +764,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(spec *v1
 			NetworkNamespace:  spec.NetworkNamespace,
 			MTU:               uint(rt.MTU), //nolint:gosec // MTU is always non-negative
 			IPAM:              ipam,
-			MetaPluginsConfig: fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}, "args": {"cni": {"rdmaDeviceName": "%s"}}}`, rdmaQoSToS, rdmaQoSTC, rdmDeviceName),
+			MetaPluginsConfig: metaPlugins,
 		},
 	}
 	if addBridge {
@@ -722,6 +785,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 		return nodeName == obj.GetName()
 	})
 
+	cidrPool := &uns.Unstructured{}
+	cidrPool.SetAPIVersion("nv-ipam.nvidia.com/v1alpha1")
+	cidrPool.SetKind("CIDRPool")
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha2.SpectrumXRailPoolConfig{}). // TODO: only reconcile objects that are related to this node
 		Watches(
@@ -730,6 +797,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 			builder.WithPredicates(
 				predicate.And(predicate.LabelChangedPredicate{}, nodeNameFilter),
 			),
+		).
+		Watches(
+			cidrPool,
+			handler.EnqueueRequestsFromMapFunc(r.cidrPoolToRailConfigs),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
 		WatchesRawSource(source.Channel(ovsWatcher, railListerHandler)).
 		Named("spectrumxrailpoolconfig-host-flows").Complete(reconcile.AsReconciler[*v1alpha2.SpectrumXRailPoolConfig](r.Client, r))

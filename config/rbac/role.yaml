@@ -60,6 +60,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - nv-ipam.nvidia.com
+  resources:
+  - cidrpools
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - spectrumx.nvidia.com
   resources:
   - spectrumxrailpoolconfigs
