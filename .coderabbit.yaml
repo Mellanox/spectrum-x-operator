@@ -1,4 +1,5 @@
 reviews:
   profile: chill
+  review_status: false
   auto_review:
-    enabled: true
+    enabled: false
