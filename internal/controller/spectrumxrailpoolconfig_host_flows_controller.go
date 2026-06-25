@@ -154,10 +154,15 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 			if len(rt.NicSelector.PfNames) > 1 {
 				r.cleanupXPlaneBridges(ctx, &rt)
 			}
+
 			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name); err != nil {
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
 				return err
 			}
+		}
+		poolConfig := &sriovv1.SriovNetworkPoolConfig{ObjectMeta: metav1.ObjectMeta{Name: rpc.Name, Namespace: rpc.Namespace}}
+		if err := r.Delete(ctx, poolConfig); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete SriovNetworkPoolConfig %s/%s: %w", rpc.Namespace, rpc.Namespace, err)
 		}
 		patch := client.MergeFrom(rpc.DeepCopy())
 		controllerutil.RemoveFinalizer(rpc, finalizerName)
@@ -521,11 +526,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources
 		return fmt.Errorf("failed to delete SriovNetworkNodePolicy %s/%s: %w", namespace, rtName, err)
 	}
 
-	poolConfig := &sriovv1.SriovNetworkPoolConfig{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
-	if err := r.Delete(ctx, poolConfig); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to delete SriovNetworkPoolConfig %s/%s: %w", namespace, rtName, err)
-	}
-
 	ovsNetwork := &sriovv1.OVSNetwork{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
 	if err := r.Delete(ctx, ovsNetwork); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to delete OVSNetwork %s/%s: %w", namespace, rtName, err)
@@ -563,6 +563,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 				return err
 			}
 		}
+	}
+
+	poolConfig := &sriovv1.SriovNetworkPoolConfig{ObjectMeta: metav1.ObjectMeta{Name: rpc.Name, Namespace: rpc.Namespace}}
+	if err := r.Delete(ctx, poolConfig); client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to delete SriovNetworkPoolConfig %s/%s: %w", rpc.Namespace, rpc.Namespace, err)
 	}
 
 	return nil
