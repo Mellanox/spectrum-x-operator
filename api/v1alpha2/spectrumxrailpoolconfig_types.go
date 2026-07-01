@@ -71,10 +71,27 @@ type SpectrumXRailPoolConfigSpec struct {
 	RailTopology []RailTopology `json:"railTopology"`
 }
 
+// State represents reconcile state of the system.
+type State string
+
+// NodeState defines a finer-grained view of the observed state of NicClusterPolicy
+type NodeState struct {
+	// Name of the deployed component this state refers to
+	Name string `json:"name"`
+	// The state of the node configuration. ("Unknown", "InProgress", "Failed", "Succeeded")
+	// +kubebuilder:validation:Enum={"Unknown", "InProgress", "Failed", "Succeeded"}
+	State State `json:"state"`
+	// Message is a human-readable message indicating details about why
+	// the state is in this condition
+	Message string `json:"message,omitempty"`
+}
+
 // SpectrumXRailPoolConfigStatus defines the observed state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigStatus struct {
-	SyncStatus         string `json:"syncStatus,omitempty"`
-	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
+	SyncStatus string `json:"syncStatus,omitempty"`
+	// NodeStates provide a finer view of the observed state
+	NodeStates         []NodeState `json:"nodeStates,omitempty"`
+	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true
