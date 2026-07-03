@@ -251,11 +251,15 @@ track-template-usage-sidecar:
   rules:
     - when: never
 
-pulse-scan-oss-operator-track-usage-sidecar:
+pulse-scan-oss-operator-track-usage:
+  script:
+    - "true"
   rules:
     - when: never
 
-pulse-scan-oss-operator-rhel-track-usage-sidecar:
+pulse-scan-oss-operator-rhel-track-usage:
+  script:
+    - "true"
   rules:
     - when: never
 
