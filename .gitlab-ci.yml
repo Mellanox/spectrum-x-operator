@@ -246,14 +246,20 @@ update-component-version-in-network-operator:
 # Suppress component-generated track-usage jobs — they require a 'generic' runner
 # tag not available in this project and block the .pre stage indefinitely.
 track-template-usage:
+  script:
+    - "true"
   rules:
     - when: never
 
 pulse-scan-oss-operator-track-usage:
+  script:
+    - "true"
   rules:
     - when: never
 
 pulse-scan-oss-operator-rhel-track-usage:
+  script:
+    - "true"
   rules:
     - when: never
 
