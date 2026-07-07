@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	SyncStatusUnknown    = "Unknown"
-	SyncStatusInProgress = "InProgress"
-	SyncStatusFailed     = "Failed"
-	SyncStatusSucceeded  = "Succeeded"
+	SyncStatusUnknown    State = "Unknown"
+	SyncStatusInProgress State = "InProgress"
+	SyncStatusFailed     State = "Failed"
+	SyncStatusSucceeded  State = "Succeeded"
 )
 
 type NicSelector struct {
@@ -74,13 +74,15 @@ type SpectrumXRailPoolConfigSpec struct {
 // State represents reconcile state of the system.
 type State string
 
-// NodeState defines a finer-grained view of the observed state of NicClusterPolicy
+// NodeState defines a finer-grained view of the observed state of SpectrumXRailPoolConfig.
 type NodeState struct {
-	// Name of the deployed component this state refers to
+	// Name of the node this state refers to.
 	Name string `json:"name"`
 	// The state of the node configuration. ("Unknown", "InProgress", "Failed", "Succeeded")
 	// +kubebuilder:validation:Enum={"Unknown", "InProgress", "Failed", "Succeeded"}
 	State State `json:"state"`
+	// ObservedGeneration is the SpectrumXRailPoolConfig generation this node state was reported for.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Message is a human-readable message indicating details about why
 	// the state is in this condition
 	Message string `json:"message,omitempty"`
@@ -88,7 +90,7 @@ type NodeState struct {
 
 // SpectrumXRailPoolConfigStatus defines the observed state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigStatus struct {
-	SyncStatus string `json:"syncStatus,omitempty"`
+	SyncStatus State `json:"syncStatus,omitempty"`
 	// NodeStates provide a finer view of the observed state
 	NodeStates         []NodeState `json:"nodeStates,omitempty"`
 	ObservedGeneration int64       `json:"observedGeneration,omitempty"`

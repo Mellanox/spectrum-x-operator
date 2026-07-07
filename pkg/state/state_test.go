@@ -33,22 +33,22 @@ func TestState(t *testing.T) {
 var _ = Describe("GetNodeState", func() {
 	It("returns the matching node state when present", func() {
 		states := []v1alpha2.NodeState{
-			{Name: "node-a", State: "ready"},
-			{Name: "node-b", State: "notReady", Message: "pending"},
-			{Name: "node-c", State: "error"},
+			{Name: "node-a", State: v1alpha2.SyncStatusSucceeded},
+			{Name: "node-b", State: v1alpha2.SyncStatusInProgress, Message: "pending"},
+			{Name: "node-c", State: v1alpha2.SyncStatusFailed},
 		}
 
 		got, err := GetNodeState(states, "node-b")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(got).ToNot(BeNil())
 		Expect(got.Name).To(Equal("node-b"))
-		Expect(got.State).To(Equal(v1alpha2.State("notReady")))
+		Expect(got.State).To(Equal(v1alpha2.State(v1alpha2.SyncStatusInProgress)))
 		Expect(got.Message).To(Equal("pending"))
 	})
 
 	It("returns an error when node is not found", func() {
 		states := []v1alpha2.NodeState{
-			{Name: "node-a", State: "ready"},
+			{Name: "node-a", State: v1alpha2.SyncStatusSucceeded},
 		}
 
 		got, err := GetNodeState(states, "missing")
