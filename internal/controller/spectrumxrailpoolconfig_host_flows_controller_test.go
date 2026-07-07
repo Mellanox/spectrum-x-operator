@@ -18,10 +18,12 @@ package controller
 
 import (
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
+	"github.com/Mellanox/spectrum-x-operator/pkg/state"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -183,5 +185,201 @@ var _ = Describe("nodeRailLister", func() {
 
 		requests := nodeRailLister.ListRailPoolConfigsForNode(ctx, nil)
 		Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: types.NamespacedName{Namespace: nsName, Name: rpcName0}}))
+	})
+})
+
+var _ = Describe("SpectrumXRailPoolConfigHostFlowsReconciler status", func() {
+	const (
+		localNodeName  = "test-node-a"
+		remoteNodeName = "test-node-b"
+		nsName         = "test-ns"
+	)
+
+	var (
+		fakeClient client.Client
+		reconciler *SpectrumXRailPoolConfigHostFlowsReconciler
+	)
+
+	newSelectedNode := func(name string) *v1.Node {
+		return &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Labels: map[string]string{
+					"pool": "spectrum-x",
+				},
+			},
+		}
+	}
+
+	newUnselectedNode := func(name string) *v1.Node {
+		return &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Labels: map[string]string{
+					"pool": "other",
+				},
+			},
+		}
+	}
+
+	newRailPoolConfig := func() *v1alpha2.SpectrumXRailPoolConfig {
+		return &v1alpha2.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       rpcName,
+				Namespace:  nsName,
+				Generation: 1,
+				Finalizers: []string{finalizerName},
+			},
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				NodeSelector: map[string]string{"pool": "spectrum-x"},
+				NumVfs:       1,
+			},
+			Status: v1alpha2.SpectrumXRailPoolConfigStatus{
+				SyncStatus:         v1alpha2.SyncStatusSucceeded,
+				ObservedGeneration: 1,
+				NodeStates: []v1alpha2.NodeState{
+					{
+						Name:               remoteNodeName,
+						State:              v1alpha2.SyncStatusSucceeded,
+						ObservedGeneration: 1,
+					},
+				},
+			},
+		}
+	}
+
+	newReconciler := func(objects ...client.Object) *SpectrumXRailPoolConfigHostFlowsReconciler {
+		fakeClient = fake.NewClientBuilder().
+			WithScheme(scheme.Scheme).
+			WithStatusSubresource(&v1alpha2.SpectrumXRailPoolConfig{}).
+			WithObjects(objects...).
+			Build()
+		return NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, nil, localNodeName)
+	}
+
+	It("does not skip a selected local node missing current node state when the global status already succeeded", func() {
+		rpc := newRailPoolConfig()
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newSelectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			rpc,
+		)
+
+		err := reconciler.doReconcile(ctx, rpc)
+		Expect(err).To(MatchError(ContainSubstring("expected one or more rail topologies to be specified")))
+
+		updated := &v1alpha2.SpectrumXRailPoolConfig{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+		localState, err := state.GetNodeState(updated.Status.NodeStates, localNodeName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(localState.State).To(Equal(v1alpha2.SyncStatusFailed))
+		Expect(localState.Message).To(ContainSubstring("expected one or more rail topologies to be specified"))
+	})
+
+	It("does not skip host reconciliation when selected local node state already succeeded", func() {
+		rpc := newRailPoolConfig()
+		rpc.Status.NodeStates = append(rpc.Status.NodeStates, v1alpha2.NodeState{
+			Name:               localNodeName,
+			State:              v1alpha2.SyncStatusSucceeded,
+			ObservedGeneration: rpc.Generation,
+		})
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newSelectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			rpc,
+		)
+
+		err := reconciler.doReconcile(ctx, rpc)
+		Expect(err).To(MatchError(ContainSubstring("expected one or more rail topologies to be specified")))
+	})
+
+	It("keeps aggregate status in progress until every selected node reports current success", func() {
+		rpc := newRailPoolConfig()
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
+		rpc.Status.NodeStates = []v1alpha2.NodeState{
+			{
+				Name:               localNodeName,
+				State:              v1alpha2.SyncStatusSucceeded,
+				ObservedGeneration: 1,
+			},
+		}
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newSelectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			rpc,
+		)
+
+		Expect(reconciler.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusSucceeded)).To(Succeed())
+
+		updated := &v1alpha2.SpectrumXRailPoolConfig{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+		Expect(updated.Status.SyncStatus).To(Equal(v1alpha2.SyncStatusInProgress))
+	})
+
+	It("sets aggregate status to failed when the local selected node reports current failure", func() {
+		rpc := newRailPoolConfig()
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newSelectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			rpc,
+		)
+
+		Expect(reconciler.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)).To(Succeed())
+
+		updated := &v1alpha2.SpectrumXRailPoolConfig{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+		Expect(updated.Status.SyncStatus).To(Equal(v1alpha2.SyncStatusFailed))
+	})
+
+	It("does not advance local observed generation when a newer CR generation appears during status patching", func() {
+		staleRPC := newRailPoolConfig()
+		staleRPC.Status.NodeStates = []v1alpha2.NodeState{
+			{
+				Name:               localNodeName,
+				State:              v1alpha2.SyncStatusSucceeded,
+				ObservedGeneration: staleRPC.Generation,
+			},
+		}
+		latestRPC := staleRPC.DeepCopy()
+		latestRPC.Generation = staleRPC.Generation + 1
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newSelectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			latestRPC,
+		)
+
+		err := reconciler.patchSyncStatus(ctx, staleRPC, v1alpha2.SyncStatusSucceeded)
+		Expect(apierrors.IsConflict(err)).To(BeTrue())
+
+		updated := &v1alpha2.SpectrumXRailPoolConfig{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+		localState, err := state.GetNodeState(updated.Status.NodeStates, localNodeName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(localState.ObservedGeneration).To(Equal(staleRPC.Generation))
+	})
+
+	It("does not add local node state when an unselected node observes a reconcile error", func() {
+		rpc := newRailPoolConfig()
+		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
+		rpc.Status.NodeStates = nil
+		reconciler = newReconciler(
+			&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+			newUnselectedNode(localNodeName),
+			newSelectedNode(remoteNodeName),
+			rpc,
+		)
+
+		err := reconciler.doReconcile(ctx, rpc)
+		Expect(err).To(MatchError(ContainSubstring("expected one or more rail topologies to be specified")))
+
+		updated := &v1alpha2.SpectrumXRailPoolConfig{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+		Expect(updated.Status.NodeStates).To(BeEmpty())
 	})
 })

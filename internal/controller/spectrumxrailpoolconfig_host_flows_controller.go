@@ -36,8 +36,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -160,45 +162,53 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 		return err
 	}
 
-	if rpc.Status.SyncStatus == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
-		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
-		return nil
-	}
-	if err := r.setInProgressStatus(ctx, rpc, log); err != nil {
+	localNodeSelected, err := r.localNodeMatchesSelector(ctx, rpc.Spec.NodeSelector)
+	if err != nil {
 		return err
 	}
 
-	current, err := state.GetNodeState(rpc.Status.NodeStates, r.nodeName)
-
-	if err == nil && current.State == v1alpha2.SyncStatusSucceeded && rpc.Status.ObservedGeneration == rpc.Generation {
-		log.V(1).Info("CRD is not updated", "currentStatus", rpc.Status.SyncStatus)
-		return nil
-	}
-	if err := r.setInProgressStatus(ctx, rpc, log); err != nil {
-		return err
+	if localNodeSelected && !r.localNodeStateSucceededForGeneration(rpc) {
+		if err := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusInProgress); err != nil {
+			return err
+		}
 	}
 
 	if len(rpc.Spec.RailTopology) < 1 {
-		return r.failReconcile(ctx, rpc, log, fmt.Errorf("expected one or more rail topologies to be specified"), "")
+		return r.failReconcile(ctx, rpc, log, fmt.Errorf("expected one or more rail topologies to be specified"), "", localNodeSelected)
 	}
 
 	if err := r.applyPoolConfig(ctx, rpc); err != nil {
-		return r.failReconcile(ctx, rpc, log, err, "")
+		return r.failReconcile(ctx, rpc, log, err, "", localNodeSelected)
 	}
 	if err := r.reconcileRailTopologies(ctx, rpc); err != nil {
-		return r.failReconcile(ctx, rpc, log, err, "")
+		return r.failReconcile(ctx, rpc, log, err, "", localNodeSelected)
 	}
 
 	if err := r.deleteRemovedRailTopologies(ctx, rpc); err != nil {
-		return r.failReconcile(ctx, rpc, log, err, "failed to delete removed rail topologies")
+		return r.failReconcile(ctx, rpc, log, err, "failed to delete removed rail topologies", localNodeSelected)
 	}
 
-	if err := r.processNodeStatus(ctx, rpc); err != nil {
-		return r.failReconcile(ctx, rpc, log, err, "failed to update sync status")
+	if err := r.processNodeStatus(ctx, rpc, localNodeSelected); err != nil {
+		return r.failReconcile(ctx, rpc, log, err, "failed to update sync status", localNodeSelected)
 	}
 
 	log.V(1).Info("doReconcile completed", "name", rpc.Name)
 	return nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) localNodeMatchesSelector(ctx context.Context, nodeSelector map[string]string) (bool, error) {
+	node := &v1.Node{}
+	if err := r.Get(ctx, types.NamespacedName{Name: r.nodeName}, node); err != nil {
+		return false, fmt.Errorf("failed to get local node %s: %w", r.nodeName, err)
+	}
+	return labels.Set(nodeSelector).AsSelector().Matches(labels.Set(node.Labels)), nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) localNodeStateSucceededForGeneration(rpc *v1alpha2.SpectrumXRailPoolConfig) bool {
+	current, err := state.GetNodeState(rpc.Status.NodeStates, r.nodeName)
+	return err == nil &&
+		current.State == v1alpha2.SyncStatusSucceeded &&
+		current.ObservedGeneration == rpc.Generation
 }
 
 // applyPoolConfig generates and patches the SriovNetworkPoolConfig owned by rpc.
@@ -214,12 +224,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) applyPoolConfig(ctx context
 	return nil
 }
 
-// failReconcile patches the SyncStatus to Failed, logs the failure, and returns the original error.
+// failReconcile patches selected local node status to Failed, logs the failure, and returns the original error.
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) failReconcile(
-	ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger, err error, msg string,
+	ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger, err error, msg string, localNodeSelected bool,
 ) error {
-	if e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed); e != nil {
-		log.Error(e, "failed to patch sync status to Failed")
+	if localNodeSelected {
+		if e := r.patchSyncStatusWithMessage(ctx, rpc, v1alpha2.SyncStatusFailed, statusMessage(msg, err)); e != nil {
+			log.Error(e, "failed to patch sync status to Failed")
+		}
 	}
 	if msg != "" {
 		log.Error(err, msg)
@@ -227,20 +239,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) failReconcile(
 	return err
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) setInProgressStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) error {
-	if rpc.Status.SyncStatus != v1alpha2.SyncStatusInProgress {
-		log.V(1).Info("setting SyncStatus to InProgress", "currentStatus", rpc.Status.SyncStatus)
-		patch := client.MergeFrom(rpc.DeepCopy())
-		rpc.Status.SyncStatus = v1alpha2.SyncStatusInProgress
-		if err := r.Status().Patch(ctx, rpc, patch); err != nil {
-			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-			if e != nil {
-				return e
-			}
-			return fmt.Errorf("failed to set SyncStatus to InProgress: %w", err)
-		}
+func statusMessage(msg string, err error) string {
+	if msg == "" {
+		return err.Error()
 	}
-	return nil
+	return fmt.Sprintf("%s: %v", msg, err)
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, log logr.Logger) (bool, error) {
@@ -252,9 +255,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.
 			}
 			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name); err != nil {
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
-				e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-				if e != nil {
-					return true, e
+				localNodeSelected, selectorErr := r.localNodeMatchesSelector(ctx, rpc.Spec.NodeSelector)
+				if selectorErr != nil {
+					log.Error(selectorErr, "failed to check local node selector before patching failed deletion status")
+				} else if localNodeSelected {
+					e := r.patchSyncStatusWithMessage(ctx, rpc, v1alpha2.SyncStatusFailed, statusMessage("failed to delete rail topology resources", err))
+					if e != nil {
+						return true, e
+					}
 				}
 				return true, err
 			}
@@ -273,10 +281,6 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopologies(ctx
 		log.V(1).Info("reconciling rail topology", "railTopology", rt.Name)
 		err := r.reconcileRailTopology(ctx, rpc, rt)
 		if err != nil {
-			e := r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-			if e != nil {
-				return e
-			}
 			log.Error(err, "failed to reconcile rail topology", "rail topology", rt)
 			return err
 		}
@@ -678,80 +682,139 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) processNodeStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) processNodeStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, localNodeSelected bool) error {
 	log := log.FromContext(ctx)
 	log.V(1).Info("processNodeStatus started", "name", rpc.Name)
 
-	nodeList := &v1.NodeList{}
-	if err := r.List(ctx, nodeList, client.MatchingLabels(rpc.Spec.NodeSelector)); err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
-	}
-	log.V(1).Info("listed nodes for sync status update", "count", len(nodeList.Items))
-
-	newStatus := v1alpha2.SyncStatusSucceeded
-	for _, node := range nodeList.Items {
-		nodeState := &sriovv1.SriovNetworkNodeState{}
-		nsn := types.NamespacedName{Name: node.Name, Namespace: rpc.Namespace}
-		if err := r.Get(ctx, nsn, nodeState); err != nil {
-			if apierrors.IsNotFound(err) {
-				log.V(1).Info("SriovNetworkNodeState not found, staying InProgress", "node", node.Name)
-				newStatus = v1alpha2.SyncStatusInProgress
-				continue
-			}
-			return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
-		}
-		log.V(1).Info("node sync status", "node", node.Name, "syncStatus", nodeState.Status.SyncStatus)
-		switch nodeState.Status.SyncStatus {
-		case v1alpha2.SyncStatusFailed:
-			return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
-		case v1alpha2.SyncStatusInProgress:
-			newStatus = v1alpha2.SyncStatusInProgress
-		}
-	}
-
-	log.V(1).Info("patching sync status", "newStatus", newStatus)
-	return r.patchSyncStatus(ctx, rpc, newStatus)
-}
-
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newStatus string) error {
-	log := log.FromContext(ctx)
-	newState := v1alpha2.State(newStatus)
-
-	current, err := state.GetNodeState(rpc.Status.NodeStates, r.nodeName)
-	if err == nil && current.State == newState && rpc.Status.ObservedGeneration == rpc.Generation {
-		log.V(1).Info("node state unchanged, skipping patch", "name", rpc.Name, "node", r.nodeName)
+	if !localNodeSelected {
+		log.V(1).Info("local node is not part of this pool, skipping node status update", "node", r.nodeName)
 		return nil
 	}
 
-	log.V(1).Info("patchSyncStatus called", "name", rpc.Name, "node", r.nodeName, "newState", newState, "observedGeneration", rpc.Status.ObservedGeneration, "generation", rpc.Generation)
-	patch := client.MergeFrom(rpc.DeepCopy())
-	if current != nil {
-		current.State = newState
-	} else {
-		rpc.Status.NodeStates = append(rpc.Status.NodeStates, v1alpha2.NodeState{
-			Name:  r.nodeName,
-			State: newState,
-		})
+	nodeState := &sriovv1.SriovNetworkNodeState{}
+	nsn := types.NamespacedName{Name: r.nodeName, Namespace: rpc.Namespace}
+	if err := r.Get(ctx, nsn, nodeState); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.V(1).Info("local SriovNetworkNodeState not found, staying InProgress", "node", r.nodeName)
+			return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusInProgress)
+		}
+		return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", r.nodeName, err)
 	}
 
-	if allNodeStatesSucceeded(rpc.Status.NodeStates) {
-		rpc.Status.SyncStatus = v1alpha2.SyncStatusSucceeded
+	log.V(1).Info("local node sync status", "node", r.nodeName, "syncStatus", nodeState.Status.SyncStatus)
+	switch v1alpha2.State(nodeState.Status.SyncStatus) {
+	case v1alpha2.SyncStatusSucceeded:
+		return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusSucceeded)
+	case v1alpha2.SyncStatusFailed:
+		return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
+	default:
+		return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusInProgress)
 	}
-
-	rpc.Status.ObservedGeneration = rpc.Generation
-	return r.Status().Patch(ctx, rpc, patch)
 }
 
-func allNodeStatesSucceeded(states []v1alpha2.NodeState) bool {
-	if len(states) == 0 {
-		return false
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newState v1alpha2.State) error {
+	return r.patchSyncStatusWithMessage(ctx, rpc, newState, "")
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) patchSyncStatusWithMessage(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, newState v1alpha2.State, message string) error {
+	log := log.FromContext(ctx)
+	reconcileGeneration := rpc.Generation
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &v1alpha2.SpectrumXRailPoolConfig{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: rpc.Namespace, Name: rpc.Name}, latest); err != nil {
+			return err
+		}
+		if latest.Generation != reconcileGeneration {
+			return apierrors.NewConflict(
+				schema.GroupResource{Group: v1alpha2.GroupVersion.Group, Resource: "spectrumxrailpoolconfigs"},
+				rpc.Name,
+				fmt.Errorf("latest generation %d differs from reconcile generation %d", latest.Generation, reconcileGeneration),
+			)
+		}
+
+		updated := latest.DeepCopy()
+		current, nodeStateErr := state.GetNodeState(updated.Status.NodeStates, r.nodeName)
+		aggregateStatus, err := r.aggregateSyncStatus(ctx, updated)
+		if err != nil {
+			return err
+		}
+		if nodeStateErr == nil &&
+			current.State == newState &&
+			current.Message == message &&
+			current.ObservedGeneration == reconcileGeneration &&
+			updated.Status.SyncStatus == aggregateStatus &&
+			updated.Status.ObservedGeneration == reconcileGeneration {
+			log.V(1).Info("node state unchanged, skipping patch", "name", updated.Name, "node", r.nodeName)
+			rpc.Status = updated.Status
+			return nil
+		}
+
+		log.V(1).Info("patchSyncStatus called", "name", updated.Name, "node", r.nodeName, "newState", newState, "observedGeneration", updated.Status.ObservedGeneration, "generation", updated.Generation)
+		if current != nil {
+			current.State = newState
+			current.Message = message
+			current.ObservedGeneration = reconcileGeneration
+		} else {
+			updated.Status.NodeStates = append(updated.Status.NodeStates, v1alpha2.NodeState{
+				Name:               r.nodeName,
+				State:              newState,
+				Message:            message,
+				ObservedGeneration: reconcileGeneration,
+			})
+		}
+
+		aggregateStatus, err = r.aggregateSyncStatus(ctx, updated)
+		if err != nil {
+			return err
+		}
+		updated.Status.SyncStatus = aggregateStatus
+		updated.Status.ObservedGeneration = reconcileGeneration
+
+		patch := client.MergeFromWithOptions(latest.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		if err := r.Status().Patch(ctx, updated, patch); err != nil {
+			return err
+		}
+		rpc.Status = updated.Status
+		return nil
+	})
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) aggregateSyncStatus(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) (v1alpha2.State, error) {
+	nodeList := &v1.NodeList{}
+	if err := r.List(ctx, nodeList, client.MatchingLabels(rpc.Spec.NodeSelector)); err != nil {
+		return "", fmt.Errorf("failed to list nodes for sync status aggregation: %w", err)
 	}
-	for i := range states {
-		if states[i].State != v1alpha2.SyncStatusSucceeded {
-			return false
+
+	if len(nodeList.Items) == 0 {
+		return v1alpha2.SyncStatusInProgress, nil
+	}
+
+	statesByNodeName := make(map[string]v1alpha2.NodeState, len(rpc.Status.NodeStates))
+	for _, nodeState := range rpc.Status.NodeStates {
+		statesByNodeName[nodeState.Name] = nodeState
+	}
+
+	allSucceeded := true
+	for _, node := range nodeList.Items {
+		nodeState, ok := statesByNodeName[node.Name]
+		if !ok || nodeState.ObservedGeneration != rpc.Generation {
+			allSucceeded = false
+			continue
+		}
+		switch nodeState.State {
+		case v1alpha2.SyncStatusFailed:
+			return v1alpha2.SyncStatusFailed, nil
+		case v1alpha2.SyncStatusSucceeded:
+		default:
+			allSucceeded = false
 		}
 	}
-	return true
+
+	if allSucceeded {
+		return v1alpha2.SyncStatusSucceeded, nil
+	}
+	return v1alpha2.SyncStatusInProgress, nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolConfig(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) *sriovv1.SriovNetworkPoolConfig {
