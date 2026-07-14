@@ -3,7 +3,7 @@ name: Fork CI
 on:
   push:
     branches:
-      - network-operator-*
+      - main
     tags:
       - network-operator-*
 
