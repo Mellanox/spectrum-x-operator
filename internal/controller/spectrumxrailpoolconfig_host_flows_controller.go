@@ -82,8 +82,12 @@ const (
 )
 
 const (
-	finalizerName  = "spectrumx.nvidia.com/spectrumxrailpoolconfig"
-	labelOwnerName = "spectrumx.nvidia.com/owner-name"
+	finalizerName         = "spectrumx.nvidia.com/spectrumxrailpoolconfig"
+	labelOwnerName        = "spectrumx.nvidia.com/owner-name"
+	labelRailTopologyName = "spectrumx.nvidia.com/rail-topology-name"
+	labelMultiplane       = "spectrumx.nvidia.com/multiplane"
+	labelMultiplaneValue  = "true"
+	unusedPolicySuffix    = "-unused"
 )
 
 const (
@@ -304,23 +308,40 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		return fmt.Errorf("no PF names are specified in rail topology")
 	}
 
-	ownerLabels := map[string]string{labelOwnerName: rpc.Name}
+	isMultiplane := len(rt.NicSelector.PfNames) > 1
+	firstPF := rt.NicSelector.PfNames[0]
+	remainingPFs := rt.NicSelector.PfNames[1:]
 
-	var policy *sriovv1.SriovNetworkNodePolicy
-	if len(rt.NicSelector.PfNames) == 1 {
-		// sw plb or no multiplane
-		log.V(1).Info("generating SriovNetworkNodePolicy for SW PLB", "railTopology", rt.Name)
-		policy = r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, false, namespace)
-	} else {
-		// hw multiplane
-		log.V(1).Info("generating SriovNetworkNodePolicy for HW multiplane", "railTopology", rt.Name)
-		policy = r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, true, namespace)
+	ownerLabels := map[string]string{
+		labelOwnerName:        rpc.Name,
+		labelRailTopologyName: rt.Name,
 	}
+	if isMultiplane {
+		ownerLabels[labelMultiplane] = labelMultiplaneValue
+	}
+
+	// Primary policy: first PF with 1 VF for GPU-to-GPU RDMA traffic.
+	log.V(1).Info("generating primary SriovNetworkNodePolicy", "railTopology", rt.Name, "pf", firstPF)
+	policy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name, rt.Name, []string{firstPF}, 1, isMultiplane, namespace)
 	policy.Labels = ownerLabels
 
-	log.V(1).Info("patching SriovNetworkNodePolicy", "name", policy.Name)
+	log.V(1).Info("patching primary SriovNetworkNodePolicy", "name", policy.Name)
 	if err := r.Patch(ctx, policy, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
 		return fmt.Errorf("error while patching %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
+	}
+
+	// Secondary policy: remaining PFs with 1 VF each; resource name suffixed with -unused so the
+	// device plugin does not expose these VFs for workload scheduling.
+	// That's a temporary solution until SR-IOV Operator and Device plugin can't support empty resource name
+	// to proceed a configuration without exposing resources to users.
+	if len(remainingPFs) > 0 {
+		log.V(1).Info("generating secondary SriovNetworkNodePolicy for remaining PFs", "railTopology", rt.Name, "pfs", remainingPFs)
+		secondaryPolicy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name+unusedPolicySuffix, rt.Name+unusedPolicySuffix, remainingPFs, 1, true, namespace)
+		secondaryPolicy.Labels = ownerLabels
+		log.V(1).Info("patching secondary SriovNetworkNodePolicy", "name", secondaryPolicy.Name)
+		if err := r.Patch(ctx, secondaryPolicy, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
+			return fmt.Errorf("error while patching %s %s: %w", secondaryPolicy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(secondaryPolicy), err)
+		}
 	}
 
 	addBridge := len(rt.NicSelector.PfNames) > 1
@@ -626,9 +647,15 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources
 	log.V(1).Info("deleteRailTopologyResources started", "namespace", namespace, "railTopology", rtName)
 
 	policy := &sriovv1.SriovNetworkNodePolicy{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
-	log.V(1).Info("deleting SriovNetworkNodePolicy", "name", rtName)
+	log.V(1).Info("deleting primary SriovNetworkNodePolicy", "name", rtName)
 	if err := r.Delete(ctx, policy); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to delete SriovNetworkNodePolicy %s/%s: %w", namespace, rtName, err)
+	}
+
+	secondaryPolicy := &sriovv1.SriovNetworkNodePolicy{ObjectMeta: metav1.ObjectMeta{Name: rtName + unusedPolicySuffix, Namespace: namespace}}
+	log.V(1).Info("deleting secondary SriovNetworkNodePolicy", "name", rtName+unusedPolicySuffix)
+	if err := r.Delete(ctx, secondaryPolicy); client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to delete secondary SriovNetworkNodePolicy %s/%s: %w", namespace, rtName+unusedPolicySuffix, err)
 	}
 
 	ovsNetwork := &sriovv1.OVSNetwork{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
@@ -660,21 +687,30 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 	}
 	log.V(1).Info("listed owned SriovNetworkNodePolicies", "count", len(policyList.Items))
 
+	deletedTopologies := make(map[string]struct{})
 	for _, policy := range policyList.Items {
-		if _, exists := currentTopologies[policy.Name]; !exists {
-			log.V(1).Info("deleting removed rail topology", "railTopology", policy.Name)
-			rt := v1alpha2.RailTopology{
-				Name: policy.Name,
-				NicSelector: v1alpha2.NicSelector{
-					PfNames: policy.Spec.NicSelector.PfNames,
-				},
-			}
-			if len(rt.NicSelector.PfNames) > 1 {
-				r.cleanupXPlaneBridges(ctx, &rt)
-			}
-			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, policy.Name); err != nil {
-				return err
-			}
+		// Prefer the explicit topology name label; fall back to policy name for old policies without the label.
+		rtName := policy.Labels[labelRailTopologyName]
+		if rtName == "" {
+			rtName = policy.Name
+		}
+
+		if _, exists := currentTopologies[rtName]; exists {
+			continue
+		}
+		if _, alreadyDeleted := deletedTopologies[rtName]; alreadyDeleted {
+			continue
+		}
+		deletedTopologies[rtName] = struct{}{}
+
+		log.V(1).Info("deleting removed rail topology", "railTopology", rtName)
+		isMultiplane := policy.Labels[labelMultiplane] == labelMultiplaneValue ||
+			(policy.Labels[labelRailTopologyName] == "" && len(policy.Spec.NicSelector.PfNames) > 1)
+		if isMultiplane {
+			r.cleanupXPlaneBridges(ctx, &v1alpha2.RailTopology{Name: rtName})
+		}
+		if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rtName); err != nil {
+			return err
 		}
 	}
 
@@ -851,11 +887,20 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 	return nodePool
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, hardwarePLB bool, namespace string) *sriovv1.SriovNetworkNodePolicy {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(
+	ctx context.Context,
+	spec *v1alpha2.SpectrumXRailPoolConfigSpec,
+	rt *v1alpha2.RailTopology,
+	policyName string,
+	resourceName string,
+	pfNames []string,
+	numVfs int,
+	hardwarePLB bool,
+	namespace string,
+) *sriovv1.SriovNetworkNodePolicy {
 	nicSelector := &sriovv1.SriovNetworkNicSelector{
-		PfNames: rt.NicSelector.PfNames,
+		PfNames: pfNames,
 	}
-	nodeSelector := spec.NodeSelector
 
 	// Spectrum-X requires hardware-managed flow steering (hmfs) on both SW PLB and HW multiplane.
 	// HW multiplane additionally requires multiport e-switch.
@@ -864,18 +909,16 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 
 	nodePolicy := &sriovv1.SriovNetworkNodePolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      rt.Name,
+			Name:      policyName,
 			Namespace: namespace,
 		},
-		// According to NVIDIA Spectrum-X architecture we need only VF per PF to be created
-		// which would be used for GPU to GPU traffic so IsRDMA flag is required
 		Spec: sriovv1.SriovNetworkNodePolicySpec{
-			ResourceName: rt.Name,
+			ResourceName: resourceName,
 			Mtu:          rt.MTU,
-			NumVfs:       spec.NumVfs,
+			NumVfs:       numVfs,
 			NicSelector:  *nicSelector,
-			NodeSelector: nodeSelector,
-			IsRdma:       true,
+			NodeSelector: spec.NodeSelector,
+			IsRdma:       numVfs > 0,
 			EswitchMode:  "switchdev",
 		},
 	}
@@ -887,23 +930,23 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 		nodePolicy.Spec.DevlinkParams = sriovv1.DevlinkParams{
 			Params: []sriovv1.DevlinkParam{flowSteeringParam},
 		}
-		bridge := &sriovv1.Bridge{
-			GroupingPolicy: "perPF",
-			OVS: &sriovv1.OVSConfig{
-				Bridge: sriovv1.OVSBridgeConfig{
-					DatapathType: ovsDataPathType,
-					// TODO: groupingPolicy=perPF option
-				},
-				Uplink: sriovv1.OVSUplinkConfig{
-					Interface: sriovv1.OVSInterfaceConfig{
-						Type:       ovsNetworkInterfaceType,
-						MTURequest: &rt.MTU,
+		// SW PLB: configure OVS bridge on the PF (only when creating VFs).
+		if numVfs > 0 {
+			nodePolicy.Spec.Bridge = sriovv1.Bridge{
+				GroupingPolicy: "perPF",
+				OVS: &sriovv1.OVSConfig{
+					Bridge: sriovv1.OVSBridgeConfig{
+						DatapathType: ovsDataPathType,
+					},
+					Uplink: sriovv1.OVSUplinkConfig{
+						Interface: sriovv1.OVSInterfaceConfig{
+							Type:       ovsNetworkInterfaceType,
+							MTURequest: &rt.MTU,
+						},
 					},
 				},
-			},
+			}
 		}
-
-		nodePolicy.Spec.Bridge = *bridge
 	}
 
 	nodePolicy.ManagedFields = nil
