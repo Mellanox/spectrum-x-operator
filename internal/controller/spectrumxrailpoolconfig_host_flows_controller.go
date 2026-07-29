@@ -704,6 +704,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) processNodeStatus(ctx conte
 	log.V(1).Info("local node sync status", "node", r.nodeName, "syncStatus", nodeState.Status.SyncStatus)
 	switch v1alpha2.State(nodeState.Status.SyncStatus) {
 	case v1alpha2.SyncStatusSucceeded:
+		if len(nodeState.Spec.Interfaces) == 0 {
+			log.V(1).Info("SriovNetworkNodeState succeeded but has no configured interfaces, staying InProgress", "node", r.nodeName)
+			return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusInProgress)
+		}
 		return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusSucceeded)
 	case v1alpha2.SyncStatusFailed:
 		return r.patchSyncStatus(ctx, rpc, v1alpha2.SyncStatusFailed)
