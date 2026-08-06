@@ -320,9 +320,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		ownerLabels[labelMultiplane] = labelMultiplaneValue
 	}
 
-	// Primary policy: first PF with 1 VF for GPU-to-GPU RDMA traffic.
-	log.V(1).Info("generating primary SriovNetworkNodePolicy", "railTopology", rt.Name, "pf", firstPF)
-	policy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name, rt.Name, []string{firstPF}, 1, isMultiplane, namespace)
+	// Primary policy: first PF with numVfs VFs for GPU-to-GPU RDMA traffic.
+	log.V(1).Info("generating primary SriovNetworkNodePolicy", "railTopology", rt.Name, "pf", firstPF, "numVfs", spec.NumVfs)
+	policy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name, rt.Name, []string{firstPF}, spec.NumVfs, isMultiplane, namespace)
 	policy.Labels = ownerLabels
 
 	log.V(1).Info("patching primary SriovNetworkNodePolicy", "name", policy.Name)

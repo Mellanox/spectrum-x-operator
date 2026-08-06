@@ -383,3 +383,79 @@ var _ = Describe("SpectrumXRailPoolConfigHostFlowsReconciler status", func() {
 		Expect(updated.Status.NodeStates).To(BeEmpty())
 	})
 })
+
+var _ = Describe("reconcileRailTopology SriovNetworkNodePolicy numVfs", func() {
+	const (
+		nsName   = "test-ns-numvfs"
+		railName = "rail-0"
+	)
+
+	var (
+		fakeClient client.Client
+		reconciler *SpectrumXRailPoolConfigHostFlowsReconciler
+	)
+
+	BeforeEach(func() {
+		fakeClient = fake.NewClientBuilder().
+			WithScheme(scheme.Scheme).
+			WithObjects(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}).
+			Build()
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, nil, "test-node")
+	})
+
+	It("sets primary policy NumVfs from spec and secondary to 1 for multi-PF rails", func() {
+		const wantNumVfs = 2
+		rpc := &v1alpha2.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: rpcName, Namespace: nsName},
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				NumVfs: wantNumVfs,
+				RailTopology: []v1alpha2.RailTopology{{
+					Name: railName,
+					MTU:  9000,
+					NicSelector: v1alpha2.NicSelector{
+						PfNames: []string{"pf0", "pf1"},
+					},
+				}},
+			},
+		}
+
+		Expect(reconciler.reconcileRailTopology(ctx, rpc, rpc.Spec.RailTopology[0])).To(Succeed())
+
+		primary := &sriovv1.SriovNetworkNodePolicy{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: railName}, primary)).To(Succeed())
+		Expect(primary.Spec.NumVfs).To(Equal(wantNumVfs))
+		Expect(primary.Spec.NicSelector.PfNames).To(Equal([]string{"pf0"}))
+
+		secondary := &sriovv1.SriovNetworkNodePolicy{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: railName + unusedPolicySuffix}, secondary)).To(Succeed())
+		Expect(secondary.Spec.NumVfs).To(Equal(1))
+		Expect(secondary.Spec.NicSelector.PfNames).To(Equal([]string{"pf1"}))
+	})
+
+	It("sets primary policy NumVfs from spec for single-PF rails", func() {
+		const wantNumVfs = 4
+		rpc := &v1alpha2.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: rpcName, Namespace: nsName},
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				NumVfs: wantNumVfs,
+				RailTopology: []v1alpha2.RailTopology{{
+					Name: railName,
+					MTU:  9000,
+					NicSelector: v1alpha2.NicSelector{
+						PfNames: []string{"pf0"},
+					},
+				}},
+			},
+		}
+
+		Expect(reconciler.reconcileRailTopology(ctx, rpc, rpc.Spec.RailTopology[0])).To(Succeed())
+
+		primary := &sriovv1.SriovNetworkNodePolicy{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: railName}, primary)).To(Succeed())
+		Expect(primary.Spec.NumVfs).To(Equal(wantNumVfs))
+
+		secondary := &sriovv1.SriovNetworkNodePolicy{}
+		err := fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: railName + unusedPolicySuffix}, secondary)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+})
