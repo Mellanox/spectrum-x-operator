@@ -68,6 +68,10 @@ spec:
           mountPath: /var/run/openvswitch/
         - name: ovs-systemd-config
           mountPath: /etc/default/openvswitch-switch
+        - name: spectrum-x-lib
+          mountPath: /var/lib/spectrum-x
+        - name: ovs-vswitchd-dropin
+          mountPath: /etc/systemd/system/ovs-vswitchd.service.d
         resources:
           limits:
             cpu: 500m
@@ -88,6 +92,14 @@ spec:
       - name: ovs-systemd-config
         hostPath:
           path: /etc/default/openvswitch-switch
+      - name: spectrum-x-lib
+        hostPath:
+          path: /var/lib/spectrum-x
+          type: DirectoryOrCreate
+      - name: ovs-vswitchd-dropin
+        hostPath:
+          path: /etc/systemd/system/ovs-vswitchd.service.d
+          type: DirectoryOrCreate
       - name: host-cni
         hostPath:
           path: /opt/cni/bin
