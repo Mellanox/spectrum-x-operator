@@ -53,6 +53,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
+	"github.com/Mellanox/spectrum-x-operator/internal/ovssafestart"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/state"
@@ -103,6 +104,9 @@ type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	exec     exec.API
 	bridge   sriovhosttypes.BridgeInterface
 	nodeName string
+	// hostRoot prefixes safe-start install paths in tests; empty in production
+	// where /var/lib/spectrum-x and the ovs drop-in dir are bind-mounted.
+	hostRoot string
 }
 
 func NewSpectrumXRailPoolConfigHostFlowsReconciler(
@@ -382,6 +386,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 	log := log.FromContext(ctx)
 	log.V(1).Info("configureXPlane started", "railTopology", rt.Name, "nodeName", r.nodeName)
 
+	// Install the OVS safe-start hook early so the next ovs-vswitchd start is
+	// protected even if we are still waiting on SriovNetworkNodeState/switchdev.
+	if err := ovssafestart.EnsureInstalled(r.hostRoot); err != nil {
+		return fmt.Errorf("failed to install ovs safe-start hook: %w", err)
+	}
+
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
@@ -409,6 +419,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 		return nil
 	}
 
+	if !pfsInSwitchdevMode(localNodeState, rt.NicSelector.PfNames) {
+		log.Info("waiting for PFs to enter switchdev before creating xplane bridges",
+			"railTopology", rt.Name, "pfNames", rt.NicSelector.PfNames)
+		return nil
+	}
+
 	log.V(1).Info("creating xplane bridges", "railTopology", rt.Name)
 	err := r.createXPlaneBridges(ctx, rt, localNodeState)
 	if err != nil {
@@ -421,6 +437,29 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 
 	log.V(1).Info("configureXPlane completed", "railTopology", rt.Name)
 	return nil
+}
+
+// pfsInSwitchdevMode reports whether every requested PF is present in the
+// SriovNetworkNodeState status with eSwitchMode=switchdev.
+func pfsInSwitchdevMode(nodeState *sriovv1.SriovNetworkNodeState, pfNames []string) bool {
+	if nodeState == nil || len(pfNames) == 0 {
+		return false
+	}
+	byName := make(map[string]sriovv1.InterfaceExt, len(nodeState.Status.Interfaces))
+	for i := range nodeState.Status.Interfaces {
+		iface := nodeState.Status.Interfaces[i]
+		byName[iface.Name] = iface
+	}
+	for _, name := range pfNames {
+		iface, ok := byName[name]
+		if !ok {
+			return false
+		}
+		if iface.EswitchMode != sriovv1.ESwithModeSwitchDev {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Context, client client.Client, poolConfig *v1alpha2.SpectrumXRailPoolConfig,
@@ -1058,6 +1097,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 			builder.WithPredicates(
 				predicate.And(predicate.LabelChangedPredicate{}, nodeNameFilter),
 			),
+		).
+		Watches(
+			&sriovv1.SriovNetworkNodeState{},
+			railListerHandler,
+			builder.WithPredicates(nodeNameFilter),
 		).
 		Watches(
 			cidrPool,
