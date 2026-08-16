@@ -401,6 +401,7 @@ var _ = Describe("reconcileRailTopology SriovNetworkNodePolicy numVfs", func() {
 			WithObjects(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}).
 			Build()
 		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, nil, "test-node")
+		reconciler.hostRoot = GinkgoT().TempDir()
 	})
 
 	It("sets primary policy NumVfs from spec and secondary to 1 for multi-PF rails", func() {
@@ -457,5 +458,37 @@ var _ = Describe("reconcileRailTopology SriovNetworkNodePolicy numVfs", func() {
 		secondary := &sriovv1.SriovNetworkNodePolicy{}
 		err := fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: railName + unusedPolicySuffix}, secondary)
 		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+})
+
+var _ = Describe("pfsInSwitchdevMode", func() {
+	It("returns false for nil node state or empty PF list", func() {
+		Expect(pfsInSwitchdevMode(nil, []string{"p0"})).To(BeFalse())
+		Expect(pfsInSwitchdevMode(&sriovv1.SriovNetworkNodeState{}, nil)).To(BeFalse())
+	})
+
+	It("returns false when a PF is missing or not in switchdev", func() {
+		nodeState := &sriovv1.SriovNetworkNodeState{
+			Status: sriovv1.SriovNetworkNodeStateStatus{
+				Interfaces: []sriovv1.InterfaceExt{
+					{Name: "p0", EswitchMode: sriovv1.ESwithModeSwitchDev},
+					{Name: "p1", EswitchMode: sriovv1.ESwithModeLegacy},
+				},
+			},
+		}
+		Expect(pfsInSwitchdevMode(nodeState, []string{"p0", "p1"})).To(BeFalse())
+		Expect(pfsInSwitchdevMode(nodeState, []string{"p0", "p2"})).To(BeFalse())
+	})
+
+	It("returns true when all requested PFs are in switchdev", func() {
+		nodeState := &sriovv1.SriovNetworkNodeState{
+			Status: sriovv1.SriovNetworkNodeStateStatus{
+				Interfaces: []sriovv1.InterfaceExt{
+					{Name: "p0", EswitchMode: sriovv1.ESwithModeSwitchDev},
+					{Name: "p1", EswitchMode: sriovv1.ESwithModeSwitchDev},
+				},
+			},
+		}
+		Expect(pfsInSwitchdevMode(nodeState, []string{"p0", "p1"})).To(BeTrue())
 	})
 })
