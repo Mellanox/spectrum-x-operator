@@ -917,6 +917,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 					"hw-offload":         "true",
 					"hw-offload-ct-size": "0",
 					"max-idle":           "300000",
+					"pmd-sleep-max":      "500",
 				},
 			},
 		},
