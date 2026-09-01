@@ -9,7 +9,7 @@ require (
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/k8snetworkplumbingwg/sriov-network-operator v1.6.1-0.20251209154253-eaf8b48c09af
 	github.com/onsi/ginkgo/v2 v2.32.0
-	github.com/onsi/gomega v1.42.1
+	github.com/onsi/gomega v1.43.0
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
 	golang.org/x/sys v0.47.0
