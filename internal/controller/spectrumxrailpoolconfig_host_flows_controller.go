@@ -621,8 +621,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 	// Create br-xplane bridge. It connects all bridges via patch ports and
 	// has no single physical uplink, so it cannot be created via ConfigureBridges.
 
+	numPFs := len(rt.NicSelector.PfNames)
 	for idx, pfName := range rt.NicSelector.PfNames {
-		log.Info("createXPlaneBridges(): creating port", "bridge", xplaneBridge, "PF", pfName, "Rail Topology", rt.Name)
+		planeID := numPFs*rt.SwPlane + idx
+		log.Info("createXPlaneBridges(): creating port", "bridge", xplaneBridge, "PF", pfName, "Rail Topology", rt.Name, "planeID", planeID)
 		if _, err := r.exec.Execute(fmt.Sprintf(
 			"ovs-vsctl --may-exist add-port %s %s"+
 				" -- set Interface %s"+
@@ -631,8 +633,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 				" external_ids:xplane-plane-id=%d"+
 				" external_ids:xplane-group-id=%s"+
 				" external_ids:xplane-uplink=true"+
+				" external_ids:plane_id=%d"+
 				" options:dpdk-lsc-interrupt=true",
-			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name,
+			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name, planeID,
 		)); err != nil {
 			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
 			continue

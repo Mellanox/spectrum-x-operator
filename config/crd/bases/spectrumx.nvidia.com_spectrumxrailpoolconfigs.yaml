@@ -102,6 +102,12 @@ spec:
                       required:
                       - pfNames
                       type: object
+                    swPlane:
+                      description: |-
+                        SwPlane identifies the switch plane this rail topology belongs to.
+                        Only takes effect when multiple devices are specified in nicSelector.pfNames (HW PLB).
+                      minimum: 0
+                      type: integer
                   required:
                   - mtu
                   - name

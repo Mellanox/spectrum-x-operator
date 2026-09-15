@@ -48,6 +48,11 @@ type RailTopology struct {
 	// MTU
 	// +kubebuilder:validation:Minimum=0
 	MTU int `json:"mtu"`
+	// SwPlane identifies the switch plane this rail topology belongs to.
+	// Only takes effect when multiple devices are specified in nicSelector.pfNames (HW PLB).
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	SwPlane int `json:"swPlane,omitempty"`
 }
 
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
