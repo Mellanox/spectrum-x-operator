@@ -34,7 +34,8 @@ type Exec struct{}
 var _ API = (*Exec)(nil)
 
 func (e *Exec) Execute(command string) (string, error) {
-	out, err := osexec.Command("sh", "-c", command).CombinedOutput() //nolint:noctx
+	// Commands are built by the operator itself, never from user-supplied input.
+	out, err := osexec.Command("sh", "-c", command).CombinedOutput() //nolint:gosec,noctx
 	if err != nil {
 		return "", err
 	}

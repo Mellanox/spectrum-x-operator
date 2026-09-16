@@ -272,12 +272,10 @@ $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.7.2
+GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_PKG = github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 golangci-lint:
-	@[ -f $(GOLANGCI_LINT) ] || { \
-	set -e ;\
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(GOLANGCI_LINT_VERSION) ;\
-	}
+	$(call go-install-tool,$(GOLANGCI_LINT),$(GOLANGCI_LINT_PKG),$(GOLANGCI_LINT_VERSION))
 
 GOMOCK = $(shell pwd)/bin/mockgen
 gomock:

@@ -73,6 +73,9 @@ const (
 	sriovOVSNetworkType     = "OVSNetwork"
 	ovsDataPathType         = "netdev"
 	ovsNetworkInterfaceType = "doca"
+	devlinkApplyOnPF        = "PF"
+	devlinkCmodeRuntime     = "runtime"
+	configValueTrue         = "true"
 )
 
 const (
@@ -916,8 +919,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 			OvsHardwareOffloadConfig: sriovv1.OvsHardwareOffloadConfig{
 				Name: "",
 				OvsConfig: map[string]string{
-					"doca-init":          "true",
-					"hw-offload":         "true",
+					"doca-init":          configValueTrue,
+					"hw-offload":         configValueTrue,
 					"hw-offload-ct-size": "0",
 					"max-idle":           "300000",
 				},
@@ -946,8 +949,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePol
 
 	// Spectrum-X requires hardware-managed flow steering (hmfs) on both SW PLB and HW multiplane.
 	// HW multiplane additionally requires multiport e-switch.
-	flowSteeringParam := sriovv1.DevlinkParam{Name: "flow_steering_mode", Value: "hmfs", Cmode: "runtime", ApplyOn: "PF"}
-	eswMultiportParam := sriovv1.DevlinkParam{Name: "esw_multiport", Value: "true", Cmode: "runtime", ApplyOn: "PF"}
+	flowSteeringParam := sriovv1.DevlinkParam{
+		Name: "flow_steering_mode", Value: "hmfs", Cmode: devlinkCmodeRuntime, ApplyOn: devlinkApplyOnPF,
+	}
+	eswMultiportParam := sriovv1.DevlinkParam{
+		Name: "esw_multiport", Value: configValueTrue, Cmode: devlinkCmodeRuntime, ApplyOn: devlinkApplyOnPF,
+	}
 
 	nodePolicy := &sriovv1.SriovNetworkNodePolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1064,7 +1071,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(ctx cont
 			ResourceName:      rt.Name,
 			InterfaceType:     ovsNetworkInterfaceType,
 			NetworkNamespace:  spec.NetworkNamespace,
-			MTU:               uint(rt.MTU), //nolint:gosec // MTU is always non-negative
+			MTU:               uint(rt.MTU),
 			IPAM:              ipam,
 			MetaPluginsConfig: metaPlugins,
 		},
