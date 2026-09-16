@@ -13,7 +13,7 @@ require (
 	github.com/onsi/gomega v1.43.0
 	github.com/vishvananda/netlink v1.3.2-0.20251101063711-6e61cd407d1d
 	go.uber.org/multierr v1.11.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	k8s.io/api v0.34.11
 	k8s.io/apimachinery v0.34.11
 	k8s.io/client-go v0.34.11
