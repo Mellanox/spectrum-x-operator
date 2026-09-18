@@ -71,6 +71,8 @@ spec:
               mountPath: /var/run/openvswitch/
             - name: ovs-systemd-config
               mountPath: /etc/default/openvswitch-switch
+            - name: xplane-run
+              mountPath: /var/run/xplane
       volumes:
         - name: proc
           hostPath:
@@ -85,3 +87,7 @@ spec:
           hostPath:
             path: /etc/default/openvswitch-switch
             type: FileOrCreate
+        - name: xplane-run
+          hostPath:
+            path: /var/run/xplane
+            type: DirectoryOrCreate
