@@ -78,6 +78,17 @@ const (
 	configValueTrue         = "true"
 )
 
+// defaultOvsConfig are the OvsConfig options the operator always sets on the
+// generated SriovNetworkPoolConfig. rpc.Spec.OvsConfig is merged on top of this
+// map, so user input can only add new keys or override these defaults, never
+// remove them.
+var defaultOvsConfig = map[string]string{
+	"doca-init":          configValueTrue,
+	"hw-offload":         configValueTrue,
+	"hw-offload-ct-size": "0",
+	"max-idle":           "300000",
+}
+
 const (
 	DaemonSet      = "DaemonSet"
 	Role           = "Role"
@@ -907,6 +918,16 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 		MatchLabels: rpc.Spec.NodeSelector,
 	}
 
+	// Start from defaultOvsConfig, then let rpc.Spec.OvsConfig add new keys or
+	// override these defaults; user input can never remove a default key.
+	ovsConfig := make(map[string]string, len(defaultOvsConfig)+len(rpc.Spec.OvsConfig))
+	for k, v := range defaultOvsConfig {
+		ovsConfig[k] = v
+	}
+	for k, v := range rpc.Spec.OvsConfig {
+		ovsConfig[k] = v
+	}
+
 	nodePool := &sriovv1.SriovNetworkPoolConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rpc.Name,
@@ -917,13 +938,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 			RdmaMode:       "exclusive",
 			MaxUnavailable: rpc.Spec.MaxUnavailable,
 			OvsHardwareOffloadConfig: sriovv1.OvsHardwareOffloadConfig{
-				Name: "",
-				OvsConfig: map[string]string{
-					"doca-init":          configValueTrue,
-					"hw-offload":         configValueTrue,
-					"hw-offload-ct-size": "0",
-					"max-idle":           "300000",
-				},
+				Name:      "",
+				OvsConfig: ovsConfig,
 			},
 		},
 	}

@@ -155,6 +155,13 @@ func (in *SpectrumXRailPoolConfigSpec) DeepCopyInto(out *SpectrumXRailPoolConfig
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	if in.OvsConfig != nil {
+		in, out := &in.OvsConfig, &out.OvsConfig
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.RailTopology != nil {
 		in, out := &in.RailTopology, &out.RailTopology
 		*out = make([]RailTopology, len(*in))
