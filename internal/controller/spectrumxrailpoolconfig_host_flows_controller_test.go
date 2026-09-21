@@ -492,3 +492,50 @@ var _ = Describe("pfsInSwitchdevMode", func() {
 		Expect(pfsInSwitchdevMode(nodeState, []string{"p0", "p1"})).To(BeTrue())
 	})
 })
+
+var _ = Describe("generateSRIOVNetworkPoolConfig OvsConfig merge", func() {
+	var reconciler *SpectrumXRailPoolConfigHostFlowsReconciler
+
+	newRPC := func(ovsConfig map[string]string) *v1alpha2.SpectrumXRailPoolConfig {
+		return &v1alpha2.SpectrumXRailPoolConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: rpcName, Namespace: "test-ns"},
+			Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+				OvsConfig: ovsConfig,
+			},
+		}
+	}
+
+	BeforeEach(func() {
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(
+			fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(), scheme.Scheme, nil, nil, nil, "")
+	})
+
+	It("applies the built-in defaults when user OvsConfig is empty", func() {
+		nodePool := reconciler.generateSRIOVNetworkPoolConfig(ctx, newRPC(nil))
+		Expect(nodePool.Spec.OvsHardwareOffloadConfig.OvsConfig).To(Equal(defaultOvsConfig))
+	})
+
+	It("adds user-supplied keys alongside the defaults", func() {
+		nodePool := reconciler.generateSRIOVNetworkPoolConfig(ctx, newRPC(map[string]string{"custom-key": "custom-value"}))
+		Expect(nodePool.Spec.OvsHardwareOffloadConfig.OvsConfig).To(HaveKeyWithValue("custom-key", "custom-value"))
+		for k, v := range defaultOvsConfig {
+			Expect(nodePool.Spec.OvsHardwareOffloadConfig.OvsConfig).To(HaveKeyWithValue(k, v))
+		}
+	})
+
+	It("lets user-supplied keys override colliding defaults", func() {
+		nodePool := reconciler.generateSRIOVNetworkPoolConfig(ctx, newRPC(map[string]string{"hw-offload": "false"}))
+		Expect(nodePool.Spec.OvsHardwareOffloadConfig.OvsConfig).To(HaveKeyWithValue("hw-offload", "false"))
+		Expect(nodePool.Spec.OvsHardwareOffloadConfig.OvsConfig).To(HaveKeyWithValue("doca-init", defaultOvsConfig["doca-init"]))
+	})
+
+	It("does not mutate defaultOvsConfig", func() {
+		reconciler.generateSRIOVNetworkPoolConfig(ctx, newRPC(map[string]string{"hw-offload": "false", "custom-key": "v"}))
+		Expect(defaultOvsConfig).To(Equal(map[string]string{
+			"doca-init":          configValueTrue,
+			"hw-offload":         configValueTrue,
+			"hw-offload-ct-size": "0",
+			"max-idle":           "300000",
+		}))
+	})
+})

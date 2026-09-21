@@ -75,6 +75,12 @@ type SpectrumXRailPoolConfigSpec struct {
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 	// Namespace of the NetworkAttachmentDefinition custom resource
 	NetworkNamespace string `json:"networkNamespace,omitempty"`
+	// OvsConfig is provided for ovs-vswitchd service as other_config option,
+	// in addition to the options set internally by the operator (doca-init,
+	// hw-offload, hw-offload-ct-size, max-idle). Keys matching an internal
+	// option override its value; all other keys are added as-is.
+	// +optional
+	OvsConfig map[string]string `json:"ovsConfig,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// Number of VFs for each PF
 	NumVfs int `json:"numVfs"`
