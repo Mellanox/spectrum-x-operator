@@ -162,9 +162,6 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) Reconcile(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) (ctrl.Result, error) {
 	log.FromContext(ctx).V(1).Info("Reconcile called", "name", rpc.Name, "namespace", rpc.Namespace)
 	err := r.doReconcile(ctx, rpc)
-	if apierrors.IsConflict(err) {
-		return ctrl.Result{Requeue: true}, nil
-	}
 	return ctrl.Result{}, err
 }
 
