@@ -644,8 +644,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 				" external_ids:xplane-plane-id=%d"+
 				" external_ids:xplane-group-id=%s"+
 				" external_ids:xplane-uplink=true"+
-				" external_ids:plane_id=%d"+
-				" options:dpdk-lsc-interrupt=true",
+				" external_ids:plane_id=%d",
 			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name, planeID,
 		)); err != nil {
 			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
