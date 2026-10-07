@@ -17,8 +17,14 @@
 package controller
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
+	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/state"
+	gomock "github.com/golang/mock/gomock"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -537,5 +543,208 @@ var _ = Describe("generateSRIOVNetworkPoolConfig OvsConfig merge", func() {
 			"hw-offload-ct-size": "0",
 			"max-idle":           "300000",
 		}))
+	})
+})
+
+var _ = Describe("createXPlaneBridges ovs-vsctl failures", func() {
+	var (
+		execMock   *exec.MockAPI
+		mockCtrl   *gomock.Controller
+		reconciler *SpectrumXRailPoolConfigHostFlowsReconciler
+		rt         *v1alpha2.RailTopology
+		commands   []string
+	)
+
+	timeoutErr := fmt.Errorf("%w after 30s: ovs-vsctl", exec.ErrTimeout)
+	genericErr := errors.New("ovs-vsctl: some failure")
+
+	// failWhen makes Execute return err for commands containing substr, and succeed otherwise.
+	failWhen := func(substr string, err error) {
+		execMock.EXPECT().Execute(gomock.Any()).DoAndReturn(func(cmd string) (string, error) {
+			commands = append(commands, cmd)
+			if strings.Contains(cmd, substr) {
+				return "", err
+			}
+			return "", nil
+		}).AnyTimes()
+	}
+
+	BeforeEach(func() {
+		mockCtrl = gomock.NewController(GinkgoT())
+		execMock = exec.NewMockAPI(mockCtrl)
+		commands = nil
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, nil, execMock, nil, "test-node")
+		rt = &v1alpha2.RailTopology{
+			Name:        "rail-x",
+			MTU:         9000,
+			NicSelector: v1alpha2.NicSelector{PfNames: []string{"pf1", "pf2"}},
+		}
+	})
+
+	AfterEach(func() {
+		mockCtrl.Finish()
+	})
+
+	It("returns an error when creating the xplane bridge times out", func() {
+		failWhen("fail-mode=secure", timeoutErr)
+		err := reconciler.createXPlaneBridges(ctx, rt, &sriovv1.SriovNetworkNodeState{})
+		Expect(err).To(MatchError(exec.ErrTimeout))
+	})
+
+	It("returns an error when adding an uplink port times out and stops processing", func() {
+		failWhen("xplane-uplink=true", timeoutErr)
+		err := reconciler.createXPlaneBridges(ctx, rt, &sriovv1.SriovNetworkNodeState{})
+		Expect(err).To(MatchError(exec.ErrTimeout))
+		Expect(err.Error()).To(ContainSubstring("pf1"))
+
+		uplinkCmds := 0
+		for _, cmd := range commands {
+			if strings.Contains(cmd, "xplane-uplink=true") {
+				uplinkCmds++
+			}
+			Expect(cmd).NotTo(ContainSubstring("type=patch"), "patch ports must not be created after a timeout")
+		}
+		Expect(uplinkCmds).To(Equal(1))
+	})
+
+	It("keeps going when adding an uplink port fails with a non-timeout error", func() {
+		failWhen("xplane-uplink=true", genericErr)
+		Expect(reconciler.createXPlaneBridges(ctx, rt, &sriovv1.SriovNetworkNodeState{})).To(Succeed())
+
+		uplinkCmds, patchCmds := 0, 0
+		for _, cmd := range commands {
+			if strings.Contains(cmd, "xplane-uplink=true") {
+				uplinkCmds++
+			}
+			if strings.Contains(cmd, "type=patch") {
+				patchCmds++
+			}
+		}
+		Expect(uplinkCmds).To(Equal(2))
+		Expect(patchCmds).To(Equal(1))
+	})
+
+	It("returns an error when adding patch ports times out", func() {
+		failWhen("type=patch", timeoutErr)
+		err := reconciler.createXPlaneBridges(ctx, rt, &sriovv1.SriovNetworkNodeState{})
+		Expect(err).To(MatchError(exec.ErrTimeout))
+		Expect(err.Error()).To(ContainSubstring("patch ports"))
+	})
+
+	It("does not return an error when adding patch ports fails with a non-timeout error", func() {
+		failWhen("type=patch", genericErr)
+		Expect(reconciler.createXPlaneBridges(ctx, rt, &sriovv1.SriovNetworkNodeState{})).To(Succeed())
+	})
+})
+
+var _ = Describe("cleanupXPlaneBridges ovs-vsctl failures", func() {
+	const (
+		localNodeName = "test-node"
+		nsName        = "test-ns"
+	)
+
+	var (
+		execMock   *exec.MockAPI
+		mockCtrl   *gomock.Controller
+		fakeClient client.Client
+		reconciler *SpectrumXRailPoolConfigHostFlowsReconciler
+		commands   []string
+	)
+
+	timeoutErr := fmt.Errorf("%w after 30s: ovs-vsctl", exec.ErrTimeout)
+	genericErr := errors.New("ovs-vsctl: some failure")
+
+	failAll := func(err error) {
+		execMock.EXPECT().Execute(gomock.Any()).DoAndReturn(func(cmd string) (string, error) {
+			commands = append(commands, cmd)
+			return "", err
+		}).AnyTimes()
+	}
+
+	BeforeEach(func() {
+		mockCtrl = gomock.NewController(GinkgoT())
+		execMock = exec.NewMockAPI(mockCtrl)
+		commands = nil
+	})
+
+	AfterEach(func() {
+		mockCtrl.Finish()
+	})
+
+	Describe("cleanupXPlaneBridges", func() {
+		BeforeEach(func() {
+			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, nil, execMock, nil, localNodeName)
+		})
+
+		It("returns an error and stops when deleting a bridge times out", func() {
+			failAll(timeoutErr)
+			err := reconciler.cleanupXPlaneBridges(ctx, &v1alpha2.RailTopology{Name: "rail-x"})
+			Expect(err).To(MatchError(exec.ErrTimeout))
+			Expect(commands).To(HaveLen(1))
+		})
+
+		It("does not return an error when deleting bridges fails with a non-timeout error", func() {
+			failAll(genericErr)
+			Expect(reconciler.cleanupXPlaneBridges(ctx, &v1alpha2.RailTopology{Name: "rail-x"})).To(Succeed())
+			Expect(commands).To(HaveLen(2))
+		})
+	})
+
+	Describe("handleDeletion", func() {
+		var rpc *v1alpha2.SpectrumXRailPoolConfig
+
+		BeforeEach(func() {
+			now := metav1.Now()
+			rpc = &v1alpha2.SpectrumXRailPoolConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              rpcName,
+					Namespace:         nsName,
+					Generation:        1,
+					Finalizers:        []string{finalizerName},
+					DeletionTimestamp: &now,
+				},
+				Spec: v1alpha2.SpectrumXRailPoolConfigSpec{
+					NodeSelector: map[string]string{"pool": "spectrum-x"},
+					RailTopology: []v1alpha2.RailTopology{{
+						Name:        "rail-x",
+						NicSelector: v1alpha2.NicSelector{PfNames: []string{"pf1", "pf2"}},
+					}},
+				},
+			}
+			node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: localNodeName, Labels: map[string]string{"pool": "spectrum-x"}}}
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme.Scheme).
+				WithStatusSubresource(&v1alpha2.SpectrumXRailPoolConfig{}).
+				WithObjects(node, rpc).
+				Build()
+			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, execMock, nil, localNodeName)
+		})
+
+		It("keeps the finalizer and marks the node Failed when bridge cleanup times out", func() {
+			failAll(timeoutErr)
+
+			handled, err := reconciler.handleDeletion(ctx, rpc, GinkgoLogr)
+			Expect(handled).To(BeTrue())
+			Expect(err).To(MatchError(exec.ErrTimeout))
+
+			updated := &v1alpha2.SpectrumXRailPoolConfig{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, updated)).To(Succeed())
+			Expect(updated.Finalizers).To(ContainElement(finalizerName))
+			localState, err := state.GetNodeState(updated.Status.NodeStates, localNodeName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(localState.State).To(Equal(v1alpha2.SyncStatusFailed))
+			Expect(localState.Message).To(ContainSubstring("timed out"))
+		})
+
+		It("removes the finalizer when bridge cleanup succeeds", func() {
+			failAll(nil)
+
+			handled, err := reconciler.handleDeletion(ctx, rpc, GinkgoLogr)
+			Expect(handled).To(BeTrue())
+			Expect(err).NotTo(HaveOccurred())
+
+			err = fakeClient.Get(ctx, types.NamespacedName{Namespace: nsName, Name: rpcName}, &v1alpha2.SpectrumXRailPoolConfig{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
 	})
 })

@@ -17,10 +17,24 @@
 package exec
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	osexec "os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// DefaultTimeout bounds a single command execution. ovs-vsctl/ovs-ofctl can hang
+// indefinitely when ovsdb-server or ovs-vswitchd is unhealthy.
+var DefaultTimeout = 30 * time.Second
+
+// waitDelay is how long to wait for I/O pipes to close after the process was killed.
+const waitDelay = 5 * time.Second
+
+// ErrTimeout is returned (wrapped) when a command exceeds its timeout.
+var ErrTimeout = errors.New("command timed out")
 
 //go:generate ../../bin/mockgen -package exec -destination mock_exec.go . API
 
@@ -34,8 +48,21 @@ type Exec struct{}
 var _ API = (*Exec)(nil)
 
 func (e *Exec) Execute(command string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
 	// Commands are built by the operator itself, never from user-supplied input.
-	out, err := osexec.Command("sh", "-c", command).CombinedOutput() //nolint:gosec,noctx
+	cmd := osexec.CommandContext(ctx, "sh", "-c", command) //nolint:gosec
+	// Run in its own process group so a timeout kills the whole tree (sh and the
+	// ovs-* child), otherwise the child keeps the output pipe open.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = waitDelay
+
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("%w after %s: %s", ErrTimeout, DefaultTimeout, command)
+	}
 	if err != nil {
 		return "", err
 	}
