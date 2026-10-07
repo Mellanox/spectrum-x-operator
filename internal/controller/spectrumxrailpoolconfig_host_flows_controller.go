@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 
@@ -269,10 +270,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) handleDeletion(ctx context.
 	if !rpc.DeletionTimestamp.IsZero() {
 		log.V(1).Info("object is being deleted, cleaning up rail topology resources", "name", rpc.Name)
 		for _, rt := range rpc.Spec.RailTopology {
+			var err error
 			if len(rt.NicSelector.PfNames) > 1 {
-				r.cleanupXPlaneBridges(ctx, &rt)
+				err = r.cleanupXPlaneBridges(ctx, &rt)
 			}
-			if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name); err != nil {
+			if err == nil {
+				err = r.deleteRailTopologyResources(ctx, rpc.Namespace, rt.Name)
+			}
+			if err != nil {
 				log.Error(err, "failed to delete rail topology resources", "rail topology", rt)
 				localNodeSelected, selectorErr := r.localNodeMatchesSelector(ctx, rpc.Spec.NodeSelector)
 				if selectorErr != nil {
@@ -648,6 +653,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 			xplaneBridge, pfName, pfName, rt.MTU, idx, rt.Name, planeID,
 		)); err != nil {
 			log.Error(err, "failed to add uplink patch port to bridge", "PF name", pfName, "bridge name", xplaneBridge)
+			if errors.Is(err, exec.ErrTimeout) {
+				return fmt.Errorf("failed to add port %s to bridge %s: %w", pfName, xplaneBridge, err)
+			}
 			continue
 		}
 	}
@@ -671,6 +679,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 		xplaneBridge, patchXplanePort, patchXplanePort, patchRailPort, rt.MTU, rt.Name, brName, patchRailPort, patchRailPort, patchXplanePort, rt.MTU,
 	)); err != nil {
 		log.Error(err, "failed to add patch port to bridge", "PF name", patchXplanePort, "bridge name", xplaneBridge)
+		if errors.Is(err, exec.ErrTimeout) {
+			return fmt.Errorf("failed to add patch ports for bridge %s: %w", brName, err)
+		}
 	}
 
 	return nil
@@ -678,7 +689,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) createXPlaneBridges(ctx con
 
 // cleanupXPlaneBridges tears down host OVS bridges created by createXPlaneBridges.
 // deleteXplane controls whether br-xplane itself is deleted (only on the last rail topology).
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology) {
+// Timeouts are returned so callers retry instead of dropping the resources that reference the
+// bridges; other failures are only logged.
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx context.Context, rt *v1alpha2.RailTopology) error {
 	log := log.FromContext(ctx)
 	log.V(1).Info("cleanupXPlaneBridges started", "railTopology", rt.Name)
 	railBridge := fmt.Sprintf(railBridgeTemplate, rt.Name)
@@ -686,12 +699,19 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) cleanupXPlaneBridges(ctx co
 		"ovs-vsctl --if-exists del-br %s", railBridge,
 	)); err != nil {
 		log.Error(err, "failed to delete bridge", "bridge name", railBridge)
+		if errors.Is(err, exec.ErrTimeout) {
+			return fmt.Errorf("failed to delete bridge %s: %w", railBridge, err)
+		}
 	}
 	if _, err := r.exec.Execute(fmt.Sprintf(
 		"ovs-vsctl --if-exists del-br %s", xplaneBridge,
 	)); err != nil {
 		log.Error(err, "failed to delete bridge", "bridge name", xplaneBridge)
+		if errors.Is(err, exec.ErrTimeout) {
+			return fmt.Errorf("failed to delete bridge %s: %w", xplaneBridge, err)
+		}
 	}
+	return nil
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources(ctx context.Context, namespace, rtName string) error {
@@ -759,7 +779,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRemovedRailTopologies
 		isMultiplane := policy.Labels[labelMultiplane] == labelMultiplaneValue ||
 			(policy.Labels[labelRailTopologyName] == "" && len(policy.Spec.NicSelector.PfNames) > 1)
 		if isMultiplane {
-			r.cleanupXPlaneBridges(ctx, &v1alpha2.RailTopology{Name: rtName})
+			if err := r.cleanupXPlaneBridges(ctx, &v1alpha2.RailTopology{Name: rtName}); err != nil {
+				return err
+			}
 		}
 		if err := r.deleteRailTopologyResources(ctx, rpc.Namespace, rtName); err != nil {
 			return err
