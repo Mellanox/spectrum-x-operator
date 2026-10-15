@@ -10,6 +10,13 @@ Operator that Orchestrates NVIDIA Spectrum-X networking for Kubernetes.
 This Operator is intended to be deployed via [NVIDIA Network Operator](https://github.com/Mellanox/network-operator)
 and should not be regarded as a standalone component.
 
+The xplane DaemonSet inherits tolerations from the flowcontroller DaemonSet's
+Pod template, including subsequent changes and removals. The flowcontroller
+requires `POD_NAME` and `POD_NAMESPACE` from the downward API to identify its
+owning DaemonSet; deployment manifests must provide both when upgrading the
+operator. Failure to resolve that owner leaves existing xplane resources unchanged
+and retries reconciliation.
+
 Network Operator Documentation can be found [here](https://docs.nvidia.com/networking/software/cloud-orchestration/index.html)
 
 > __NOTE__: This project is currently under active development and should be considered Tech Preview only.
