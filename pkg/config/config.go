@@ -30,6 +30,8 @@ var (
 
 // OperatorConfig holds configuration for the Operator.
 type OperatorConfig struct {
+	PodName          string   `env:"POD_NAME"`
+	PodNamespace     string   `env:"POD_NAMESPACE"`
 	XPlaneRepository string   `env:"XPLANE_REPOSITORY"`
 	XPlaneImage      string   `env:"XPLANE_IMAGE"`
 	XPlaneVersion    string   `env:"XPLANE_VERSION"`

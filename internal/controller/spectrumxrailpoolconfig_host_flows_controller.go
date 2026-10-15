@@ -119,6 +119,7 @@ type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	exec     exec.API
 	bridge   sriovhosttypes.BridgeInterface
 	nodeName string
+	ownPod   types.NamespacedName
 	// hostRoot prefixes safe-start install paths in tests; empty in production
 	// where /var/lib/spectrum-x and the ovs drop-in dir are bind-mounted.
 	hostRoot string
@@ -149,6 +150,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=ovsnetworks,verbs=create;patch;get;list;watch;update;delete
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=sriovnetworknodestates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=nv-ipam.nvidia.com,resources=cidrpools,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -483,6 +485,10 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 ) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Deploying Xplane Service")
+	tolerations, err := r.flowcontrollerTolerations(ctx)
+	if err != nil {
+		return err
+	}
 	data := render.MakeRenderData()
 	data.Data["Namespace"] = namespace
 	data.Data["ImagePullSecrets"] = cfg.ImagePullSecrets
@@ -494,7 +500,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 	}
 	// Sync DaemonSets
 	for _, obj := range objs {
-		err = syncDsObject(ctx, client, scheme, poolConfig, obj)
+		err = syncDsObject(ctx, client, scheme, poolConfig, obj, tolerations)
 		if err != nil {
 			logger.Error(err, "Couldn't sync SR-IoV daemons objects")
 			return err
@@ -503,7 +509,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 	return nil
 }
 
-func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme, rpc *v1alpha2.SpectrumXRailPoolConfig, obj *uns.Unstructured) error {
+func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Scheme,
+	rpc *v1alpha2.SpectrumXRailPoolConfig, obj *uns.Unstructured, tolerations []v1.Toleration,
+) error {
 	logger := log.FromContext(ctx)
 	kind := obj.GetKind()
 	logger.V(1).Info("Start to sync Objects", "Kind", kind)
@@ -528,6 +536,7 @@ func syncDsObject(ctx context.Context, client client.Client, scheme *runtime.Sch
 			logger.Error(err, "Fail to convert to DaemonSet")
 			return err
 		}
+		ds.Spec.Template.Spec.Tolerations = tolerations
 		err = syncDaemonSet(ctx, client, scheme, rpc, ds)
 		if err != nil {
 			logger.Error(err, "Fail to sync DaemonSet", "Namespace", ds.Namespace, "Name", ds.Name)
@@ -570,10 +579,12 @@ func syncDaemonSet(ctx context.Context, client client.Client, scheme *runtime.Sc
 		// we need to update the obj's owner reference.
 
 		if equality.Semantic.DeepEqual(in.OwnerReferences, ds.OwnerReferences) &&
+			equality.Semantic.DeepEqual(in.Spec.Template.Spec.Tolerations, ds.Spec.Template.Spec.Tolerations) &&
 			equality.Semantic.DeepDerivative(in.Spec, ds.Spec) {
 			logger.V(1).Info("Daemonset spec did not change, not updating")
 			return nil
 		}
+		in.ResourceVersion = ds.ResourceVersion
 		err = client.Update(ctx, in)
 		if err != nil {
 			logger.Error(err, "Fail to update DaemonSet", "Namespace", in.Namespace, "Name", in.Name)
@@ -1123,6 +1134,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 	nodeName string,
 	ovsWatcher <-chan event.GenericEvent,
 ) error {
+	cfg := config.FromEnv()
+	r.ownPod = types.NamespacedName{Namespace: cfg.PodNamespace, Name: cfg.PodName}
 	railListerHandler := handler.EnqueueRequestsFromMapFunc(NewNodeRailLister(r.Client, nodeName).ListRailPoolConfigsForNode)
 
 	nodeNameFilter := predicate.NewPredicateFuncs(func(obj client.Object) bool {
@@ -1135,6 +1148,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha2.SpectrumXRailPoolConfig{}). // TODO: only reconcile objects that are related to this node
+		Watches(
+			&appsv1.DaemonSet{},
+			handler.EnqueueRequestsFromMapFunc(r.flowcontrollerToRailConfigs),
+			builder.WithPredicates(flowcontrollerTolerationsChanged()),
+		).
 		Watches(
 			&v1.Node{},
 			railListerHandler,
