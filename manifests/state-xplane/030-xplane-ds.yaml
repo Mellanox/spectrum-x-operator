@@ -33,6 +33,10 @@ spec:
         app: xplane
         name: xplane
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       terminationGracePeriodSeconds: 10
       {{- if .ImagePullSecrets }}
       imagePullSecrets:
