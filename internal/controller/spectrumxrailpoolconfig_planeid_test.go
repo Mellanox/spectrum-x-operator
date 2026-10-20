@@ -48,7 +48,7 @@ var _ = Describe("createXPlaneBridges plane_id", func() {
 			commands = append(commands, cmd)
 			return "", nil
 		}).AnyTimes()
-		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, nil, execMock, nil, "test-node")
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, execMock, nil, "test-node")
 	})
 
 	AfterEach(func() {
