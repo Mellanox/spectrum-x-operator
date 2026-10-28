@@ -90,3 +90,20 @@ Controller envtests exercise real Kubernetes status updates, concurrent host
 publication, stale inputs, node replacement, discovery failures, parameter
 preservation, and size limits. They do not establish NIC mutation, service
 readiness, or hardware qualification.
+
+### Read-only host qualification
+
+On 2026-10-28, the actual reconciler and controller manager were exercised on
+both `mevo-carmel-1` workers with DMS 3.6.0078-1, using isolated Kubernetes test
+resources and the published library pin. Each host resolved its four expected
+ConnectX-8 endpoints; Node UID, generation, and blueprint digest matched the
+current inputs. Invalid parameters and a malformed blueprint changed both host
+conditions and the aggregate condition to false while preserving the exact
+previous maps. Restoring the inputs recovered both hosts. Selecting no nodes
+removed all entries and reported `NoMatchingNodes`.
+
+This tested real host discovery and Kubernetes watches/status publication. It
+did not deploy the complete flows image, configure NICs or services, or reset
+hosts. Worker boot IDs remained unchanged. Test managers, resources, and copied
+binaries/configuration were removed; all cluster nodes remained Ready with
+unchanged scheduling state.
