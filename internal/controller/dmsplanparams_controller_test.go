@@ -330,17 +330,6 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		Expect(r.publish(ctx, params, resolved(0))).NotTo(Succeed())
 	})
-	It("keeps a previous map unresolved when a replacement would exceed the publication budget", func() {
-		Expect(r.publish(ctx, params, resolved(0))).To(Succeed())
-		prior := fetch().Status.TargetMapByHost[nodes[0].Name].TargetMap
-		oversized := resolved(0)
-		oversized.targetMap.Description = strings.Repeat("x", planStatusBudget)
-		Expect(r.publish(ctx, params, oversized)).To(Succeed())
-		entry := fetch().Status.TargetMapByHost[nodes[0].Name]
-		Expect(entry.TargetMap).To(Equal(prior))
-		Expect(meta.IsStatusConditionFalse(entry.Conditions, planResolved)).To(BeTrue())
-		Expect(meta.FindStatusCondition(entry.Conditions, planResolved).Message).To(ContainSubstring("publication budget"))
-	})
 	It("passes declaration strings unchanged and lets the real compiler preserve their types", func() {
 		params.Spec.Parameters = map[string]string{"value": "0", "large": "9007199254740993", "flag": "false", "text": "001", "mode": "0"}
 		params.Spec.SPXGS = ptr.To(false)

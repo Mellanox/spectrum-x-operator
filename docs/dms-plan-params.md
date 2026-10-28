@@ -65,9 +65,8 @@ is not selected. If every daemon is unavailable, cleanup waits for a daemon to
 resume.
 
 The aggregate condition is true only when every matching host has current valid
-bindings. Hosts can resolve independently while others remain unresolved. A
-one-MiB publication budget rejects oversized replacements and marks the host
-unresolved while retaining its prior map where possible.
+bindings. Hosts can resolve independently while others remain unresolved.
+API-server publication failures are returned for normal reconciliation retry.
 
 ## Packaging and validation
 
@@ -88,7 +87,7 @@ the image. Hosted CI without repository access cannot fetch the dependency.
 
 Controller envtests exercise real Kubernetes status updates, concurrent host
 publication, stale inputs, node replacement, discovery failures, parameter
-preservation, and size limits. They do not establish NIC mutation, service
+preservation. They do not establish NIC mutation, service
 readiness, or hardware qualification.
 
 ### Read-only host qualification

@@ -33,7 +33,6 @@ const (
 	planResolved        = "Resolved"
 	bindingsResolved    = "BindingsResolved"
 	planRefreshInterval = time.Minute
-	planStatusBudget    = 1 << 20
 )
 
 // DMSPlanParamsReconciler resolves local host bindings; it never configures NICs or services.

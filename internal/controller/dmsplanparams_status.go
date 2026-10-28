@@ -5,7 +5,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	dmsv1 "github.com/Mellanox/dms-lib/api/v1alpha1"
@@ -62,22 +61,6 @@ func (r *DMSPlanParamsReconciler) publish(ctx context.Context, observed *dmsv1.D
 			updatePlanHost(updated, r.nodeName, result)
 		}
 		updatePlanSummary(updated, selected, digest, blueprintErr)
-		if err := checkPlanStatusSize(updated); err != nil {
-			if result == nil {
-				return err
-			}
-			// Keep the last map but make it unusable, rather than publishing a truncated map.
-			if prior, exists := latest.DeepCopy().Status.TargetMapByHost[r.nodeName]; exists && prior.NodeUID == result.nodeUID {
-				updated.Status.TargetMapByHost[r.nodeName] = prior
-			} else {
-				delete(updated.Status.TargetMapByHost, r.nodeName)
-			}
-			updatePlanHost(updated, r.nodeName, &hostResolution{nodeUID: result.nodeUID, digest: digest, err: err})
-			updatePlanSummary(updated, selected, digest, err)
-			if err = checkPlanStatusSize(updated); err != nil {
-				return err
-			}
-		}
 		if equality.Semantic.DeepEqual(latest.Status, updated.Status) {
 			return nil
 		}
@@ -151,17 +134,6 @@ func updatePlanSummary(params *dmsv1.DMSPlanParams, nodes map[string]corev1.Node
 		condition.Reason, condition.Message = "NoMatchingNodes", "No nodes match the plan selector"
 	}
 	meta.SetStatusCondition(&params.Status.Conditions, condition)
-}
-
-func checkPlanStatusSize(params *dmsv1.DMSPlanParams) error {
-	data, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("encode plan status: %w", err)
-	}
-	if len(data) > planStatusBudget {
-		return fmt.Errorf("DMSPlanParams exceeds %d byte publication budget; split the node selection", planStatusBudget)
-	}
-	return nil
 }
 
 func planConflict(params *dmsv1.DMSPlanParams, message string) error {
