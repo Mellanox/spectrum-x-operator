@@ -18,6 +18,8 @@ var planPCIAddress = regexp.MustCompile(`^[0-9a-f]{4}:[0-9a-f]{2}:[01][0-9a-f]\.
 // A failed device outside an explicit selection need not block that selection.
 // Fingerprint matching or alternative maps can become ambiguous when a candidate
 // is omitted from discovery, so those cases retain their previous unresolved map.
+// Both stages matter: a failed post-breakout ASIC can otherwise make discovery
+// incorrectly look like the pre-breakout stage.
 func checkPlanDiscoveryIssues(data []byte, platform string, resolved plan.TargetMap, inventory device.Inventory) error {
 	if len(inventory.Issues) == 0 {
 		return nil
@@ -29,21 +31,31 @@ func checkPlanDiscoveryIssues(data []byte, platform string, resolved plan.Target
 		return err
 	}
 	candidates := 0
+	var authoredMap plan.TargetMap
 	for _, candidate := range authored.TargetMaps {
 		if platform == "" || candidate.PlatformType == platform {
 			candidates++
+			authoredMap = candidate
 		}
 	}
 	if candidates != 1 {
 		return fmt.Errorf("discovery issues may affect selection among authored target maps")
 	}
-	stage := resolved.PreBreakout
-	if resolved.InventoryStage == "post_breakout" {
-		stage = resolved.PostBreakout
+	selected := map[string]bool{}
+	for _, stage := range []*plan.TargetMapStage{authoredMap.PreBreakout, authoredMap.PostBreakout, resolved.PreBreakout, resolved.PostBreakout} {
+		if stage == nil {
+			continue
+		}
+		addresses, err := explicitStageASICs(stage)
+		if err != nil {
+			return err
+		}
+		for address := range addresses {
+			selected[address] = true
+		}
 	}
-	selected, err := explicitStageASICs(stage)
-	if err != nil {
-		return err
+	if len(selected) == 0 {
+		return fmt.Errorf("cannot scope discovery issues without explicit endpoints")
 	}
 	for _, issue := range inventory.Issues {
 		if !issueOutsideSelection(issue, inventory.Devices, selected) {

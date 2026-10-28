@@ -47,9 +47,10 @@ future configuration and readiness contract is not inferred from systemd units.
 The controller polls discovery every minute and watches plan, ConfigMap and Node
 changes. Incomplete enumeration or a discovery issue affecting selected hardware
 preserves a previous map but marks it unresolved. An issue outside the sole
-explicit BDF-bound target map can be ignored; unknown issue identities,
-fingerprint-only selection and alternative candidate maps fail closed because a
-missing device could change the selection. Consumers must check the condition, UID, generation and current
+explicit BDF-bound target map can be ignored only when it is outside both authored
+activation stages. Unknown issue identities, fingerprint-only stages and alternative
+candidate maps fail closed because a missing device could change map or stage
+selection. Consumers must check the condition, UID, generation and current
 ConfigMap digest before using it. Projected post-breakout endpoints are not proof
 that the hardware has been activated. Activation and rediscovery belong to the
 configuration consumer.

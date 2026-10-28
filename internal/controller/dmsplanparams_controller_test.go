@@ -150,6 +150,27 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 			Expect(meta.IsStatusConditionFalse(entry.Conditions, planResolved)).To(BeTrue(), kind)
 		}
 	})
+	It("does not infer the pre-breakout stage from a failed post-breakout ASIC", func() {
+		cm.Data[blueprintDataKey] = strings.Replace(string(blueprint),
+			"post_breakout:\n      targets:\n      - {id: rail0, bdf: '0000:03:00.0'",
+			"post_breakout:\n      targets:\n      - {id: rail0, bdf: '0000:05:00.0'", 1)
+		Expect(k8sClient.Update(ctx, cm)).To(Succeed())
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(params)})
+		Expect(err).NotTo(HaveOccurred())
+		good := fetch().Status.TargetMapByHost[nodes[0].Name]
+		Expect(meta.IsStatusConditionTrue(good.Conditions, planResolved)).To(BeTrue())
+		r.discover = func(context.Context) (device.Inventory, error) {
+			inventory := planTestInventory()
+			inventory.Issues = []device.DiscoveryIssue{{DeviceID: "0000:05:00", PCI: "0000:05:00.0", Err: errors.New("post-breakout ASIC unreadable")}}
+			return inventory, nil
+		}
+		_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(params)})
+		Expect(err).NotTo(HaveOccurred())
+		failed := fetch().Status.TargetMapByHost[nodes[0].Name]
+		Expect(failed.TargetMap).To(Equal(good.TargetMap))
+		Expect(meta.IsStatusConditionFalse(failed.Conditions, planResolved)).To(BeTrue())
+		Expect(meta.FindStatusCondition(failed.Conditions, planResolved).Message).To(ContainSubstring("discovery issue may affect selected device"))
+	})
 	It("does not use a missing candidate to choose between alternative authored maps", func() {
 		r.discover = func(context.Context) (device.Inventory, error) {
 			inventory := planTestInventory()

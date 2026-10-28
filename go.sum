@@ -15,10 +15,10 @@ github.com/Masterminds/semver/v3 v3.4.0 h1:Zog+i5UMtVoCU8oKka5P7i9q9HgrJeGzI9SA1
 github.com/Masterminds/semver/v3 v3.4.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Masterminds/sprig/v3 v3.3.0 h1:mQh0Yrg1XPo6vjYXgtf5OtijNAKJRNcTdOOGZe3tPhs=
 github.com/Masterminds/sprig/v3 v3.3.0/go.mod h1:Zy1iXRYNqNLUolqCpL4uhk6SHUMAOSCzdgBfDb35Lz0=
-github.com/Mellanox/dms-lib v0.0.0-20261028110830-6b40af3bcf2e h1:6cFqvGKeFxOiVumRNVaH0idZIjdnuCabkiC4Y8zDIsQ=
-github.com/Mellanox/dms-lib v0.0.0-20261028110830-6b40af3bcf2e/go.mod h1:i6sCek3zEM30TRGmN1tSCRD2KXqdH3WCwVF4/c3ouSY=
-github.com/Mellanox/dms-lib/api v0.0.0-20261028110830-6b40af3bcf2e h1:lK/KwKOt2Uy1RmKcY5RToSBf1NXCvvR/09Lb4tSmRbU=
-github.com/Mellanox/dms-lib/api v0.0.0-20261028110830-6b40af3bcf2e/go.mod h1:Wl6m/sWgrD6e/65abzzhLcFA+/7lfw4DHYPSaxMVIb4=
+github.com/Mellanox/dms-lib v0.0.0-20261028122855-c9d338a3743f h1:560UbcmqpWXFjpVynP29oCHqDM0lWPGampiLHvn4kXE=
+github.com/Mellanox/dms-lib v0.0.0-20261028122855-c9d338a3743f/go.mod h1:i6sCek3zEM30TRGmN1tSCRD2KXqdH3WCwVF4/c3ouSY=
+github.com/Mellanox/dms-lib/api v0.0.0-20261028122855-c9d338a3743f h1:llF5ELUtoroxuWB7zAwjFOSiznQDysiJV+M7tvMZci4=
+github.com/Mellanox/dms-lib/api v0.0.0-20261028122855-c9d338a3743f/go.mod h1:Wl6m/sWgrD6e/65abzzhLcFA+/7lfw4DHYPSaxMVIb4=
 github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d h1:x/YR1f8qeLz/K1h2lI4Q6hpAlPvyhZ3q85JJXa/cJlc=
 github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d/go.mod h1:e/EOQcvZOIjaEyqhxLbn7DGzcBObvhdjqvSZL2VDiJ4=
 github.com/Mellanox/sriovnet v1.0.3 h1:Nlmxr2mkp16aIP4CJcsnqCczxQQgOuzNDm/nu9qTBZ8=
