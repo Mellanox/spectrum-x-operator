@@ -1,3 +1,5 @@
+<!-- Copyright 2026 NVIDIA CORPORATION & AFFILIATES -->
+
 # DMS plan bindings
 
 Spectrum-X Operator resolves `DMSPlanParams` on each host using dms-lib. A referenced
@@ -43,8 +45,11 @@ This change does not configure NICs or change CC/xplane process ownership. ARC's
 future configuration and readiness contract is not inferred from systemd units.
 
 The controller polls discovery every minute and watches plan, ConfigMap and Node
-changes. Incomplete or failed discovery preserves a previous map but marks it
-unresolved. Consumers must check the condition, UID, generation and current
+changes. Incomplete enumeration or a discovery issue affecting selected hardware
+preserves a previous map but marks it unresolved. An issue outside the sole
+explicit BDF-bound target map can be ignored; unknown issue identities,
+fingerprint-only selection and alternative candidate maps fail closed because a
+missing device could change the selection. Consumers must check the condition, UID, generation and current
 ConfigMap digest before using it. Projected post-breakout endpoints are not proof
 that the hardware has been activated. Activation and rediscovery belong to the
 configuration consumer.

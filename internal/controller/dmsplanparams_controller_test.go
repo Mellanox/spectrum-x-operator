@@ -116,6 +116,58 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 		Expect(latest.Status.TargetMapByHost).To(HaveLen(2))
 		Expect(meta.IsStatusConditionTrue(latest.Status.Conditions, planResolved)).To(BeTrue())
 	})
+	It("allows a scoped issue outside the sole explicit target map", func() {
+		r.discover = func(context.Context) (device.Inventory, error) {
+			inventory := planTestInventory()
+			inventory.Issues = []device.DiscoveryIssue{{DeviceID: "unreadable-bf3", PCI: "0000:05:00.0", Err: errors.New("metadata unavailable")}}
+			return inventory, nil
+		}
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(params)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(meta.IsStatusConditionTrue(fetch().Status.TargetMapByHost[nodes[0].Name].Conditions, planResolved)).To(BeTrue())
+	})
+	It("preserves a previous map for selected, omitted requested, and uncorrelatable discovery issues", func() {
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(params)})
+		Expect(err).NotTo(HaveOccurred())
+		prior := fetch().Status.TargetMapByHost[nodes[0].Name].TargetMap
+		for _, kind := range []string{"selected", "omitted", "unknown"} {
+			r.discover = func(context.Context) (device.Inventory, error) {
+				inventory := planTestInventory()
+				issue := device.DiscoveryIssue{DeviceID: "0000:03:00", PCI: "0000:03:00.0", Err: errors.New("read failed")}
+				if kind == "omitted" {
+					inventory.Devices = nil
+				}
+				if kind == "unknown" {
+					issue.DeviceID, issue.PCI = "", ""
+				}
+				inventory.Issues = []device.DiscoveryIssue{issue}
+				return inventory, nil
+			}
+			_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(params)})
+			Expect(err).NotTo(HaveOccurred())
+			entry := fetch().Status.TargetMapByHost[nodes[0].Name]
+			Expect(entry.TargetMap).To(Equal(prior))
+			Expect(meta.IsStatusConditionFalse(entry.Conditions, planResolved)).To(BeTrue(), kind)
+		}
+	})
+	It("does not use a missing candidate to choose between alternative authored maps", func() {
+		r.discover = func(context.Context) (device.Inventory, error) {
+			inventory := planTestInventory()
+			inventory.Issues = []device.DiscoveryIssue{{DeviceID: "0000:05:00", PCI: "0000:05:00.0", Err: errors.New("read failed")}}
+			return inventory, nil
+		}
+		alternative := `targetMaps:
+  omitted.yaml:
+    schema_version: 1
+    platform_type: test
+    pre_breakout:
+      targets:
+      - {id: other, bdf: '0000:05:00.0', device_id: '0x1023', role: ew, rail: 0}
+`
+		data := []byte(strings.Replace(string(blueprint), "targetMaps:\n", alternative, 1))
+		_, err := r.resolve(ctx, params.Spec, data)
+		Expect(err).To(MatchError(ContainSubstring("selection among authored target maps")))
+	})
 	It("cleans membership even when its own node is deselected, and rejects old node incarnations", func() {
 		Expect(r.publish(ctx, params, resolved(0))).To(Succeed())
 		old := resolved(0)

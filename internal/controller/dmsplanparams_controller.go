@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -114,15 +113,14 @@ func (r *DMSPlanParamsReconciler) resolve(ctx context.Context, spec dmsv1.DMSPla
 	if err != nil {
 		return nil, fmt.Errorf("discover host: %w", err)
 	}
-	if !inventory.Complete || len(inventory.Issues) != 0 {
-		issues := []error{fmt.Errorf("discovery is incomplete or reports issues; retaining previous bindings")}
-		for _, issue := range inventory.Issues {
-			issues = append(issues, fmt.Errorf("device %q PCI %q: %w", issue.DeviceID, issue.PCI, issue.Err))
-		}
-		return nil, errors.Join(issues...)
+	if !inventory.Complete {
+		return nil, fmt.Errorf("discovery enumeration is incomplete; retaining previous bindings")
 	}
 	resolved, err := plan.ResolveTargetMap(ctx, blueprint, inventory.Devices, options)
 	if err != nil {
+		return nil, err
+	}
+	if err = checkPlanDiscoveryIssues(data, options.PlatformType, resolved, inventory); err != nil {
 		return nil, err
 	}
 	options.TargetMap = resolved
