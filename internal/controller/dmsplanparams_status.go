@@ -81,7 +81,10 @@ func (r *DMSPlanParamsReconciler) publish(ctx context.Context, observed *dmsv1.D
 		if equality.Semantic.DeepEqual(latest.Status, updated.Status) {
 			return nil
 		}
-		return r.Status().Patch(ctx, updated, client.MergeFromWithOptions(latest, client.MergeFromWithOptimisticLock{}))
+		// ResourceVersion provides optimistic concurrency while a full status
+		// update preserves literal null renderer values. Merge patches interpret
+		// those values as deletion requests.
+		return r.Status().Update(ctx, updated)
 	})
 }
 

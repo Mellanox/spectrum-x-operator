@@ -5,6 +5,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -203,6 +205,25 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 		latest := fetch()
 		Expect(latest.Status.TargetMapByHost).To(HaveLen(2))
 		Expect(meta.IsStatusConditionTrue(latest.Status.Conditions, planResolved)).To(BeTrue())
+	})
+	It("preserves literal nulls when adding and replacing target-map renderer values", func() {
+		result := resolved(0)
+		result.targetMap.Defaults = map[string]apiextensionsv1.JSON{
+			"nullable": {Raw: []byte("null")}, "zero": {Raw: []byte("0")}, "disabled": {Raw: []byte("false")},
+		}
+		result.targetMap.Runtime = map[string]apiextensionsv1.JSON{"old": {Raw: []byte(`"value"`)}}
+		Expect(r.publish(ctx, params, result)).To(Succeed())
+		first := fetch().Status.TargetMapByHost[nodes[0].Name]
+		defaults, err := json.Marshal(first.Defaults)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(defaults).To(MatchJSON(`{"nullable":null,"zero":0,"disabled":false}`))
+		result.targetMap.Runtime = map[string]apiextensionsv1.JSON{"new": {Raw: []byte("null")}}
+		Expect(r.publish(ctx, params, result)).To(Succeed())
+		second := fetch().Status.TargetMapByHost[nodes[0].Name]
+		values, err := json.Marshal(second.Runtime)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(values).To(MatchJSON(`{"new":null}`))
+		Expect(meta.IsStatusConditionTrue(second.Conditions, planResolved)).To(BeTrue())
 	})
 	It("allows a scoped issue outside the sole explicit target map", func() {
 		r.discover = func(context.Context) (device.Inventory, error) {
