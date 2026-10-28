@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"net"
 
+	dmsv1 "github.com/Mellanox/dms-lib/api/v1alpha1"
+
 	"github.com/go-logr/logr"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -114,12 +116,13 @@ const (
 // SpectrumXRailPoolConfigHostFlowsReconciler reconciles a SpectrumXRailPoolConfig object
 type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	flows    FlowsAPI
-	exec     exec.API
-	bridge   sriovhosttypes.BridgeInterface
-	nodeName string
-	ownPod   types.NamespacedName
+	planReader client.Reader
+	Scheme     *runtime.Scheme
+	flows      FlowsAPI
+	exec       exec.API
+	bridge     sriovhosttypes.BridgeInterface
+	nodeName   string
+	ownPod     types.NamespacedName
 	// hostRoot prefixes safe-start install paths in tests; empty in production
 	// where /var/lib/spectrum-x and the ovs drop-in dir are bind-mounted.
 	hostRoot string
@@ -134,12 +137,13 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 	nodeName string,
 ) *SpectrumXRailPoolConfigHostFlowsReconciler {
 	return &SpectrumXRailPoolConfigHostFlowsReconciler{
-		Client:   client,
-		Scheme:   scheme,
-		flows:    flows,
-		exec:     execAPI,
-		bridge:   bridge,
-		nodeName: nodeName,
+		Client:     client,
+		planReader: client,
+		Scheme:     scheme,
+		flows:      flows,
+		exec:       execAPI,
+		bridge:     bridge,
+		nodeName:   nodeName,
 	}
 }
 
@@ -197,6 +201,14 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) doReconcile(ctx context.Con
 
 	if len(rpc.Spec.RailTopology) < 1 {
 		return r.failReconcile(ctx, rpc, log, fmt.Errorf("expected one or more rail topologies to be specified"), "", localNodeSelected)
+	}
+	if err := r.validatePlanBindings(ctx, rpc); err != nil {
+		if localNodeSelected {
+			if statusErr := r.patchSyncStatusWithMessage(ctx, rpc, v1alpha2.SyncStatusInProgress, err.Error()); statusErr != nil {
+				return statusErr
+			}
+		}
+		return err
 	}
 
 	if err := r.applyPoolConfig(ctx, rpc); err != nil {
@@ -1136,6 +1148,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 ) error {
 	cfg := config.FromEnv()
 	r.ownPod = types.NamespacedName{Namespace: cfg.PodNamespace, Name: cfg.PodName}
+	r.planReader = mgr.GetAPIReader()
 	railListerHandler := handler.EnqueueRequestsFromMapFunc(NewNodeRailLister(r.Client, nodeName).ListRailPoolConfigsForNode)
 
 	nodeNameFilter := predicate.NewPredicateFuncs(func(obj client.Object) bool {
@@ -1148,6 +1161,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha2.SpectrumXRailPoolConfig{}). // TODO: only reconcile objects that are related to this node
+		Watches(&dmsv1.DMSPlanParams{}, handler.EnqueueRequestsFromMapFunc(r.planInputToRailConfigs)).
+		Watches(&v1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.planInputToRailConfigs)).
 		Watches(
 			&appsv1.DaemonSet{},
 			handler.EnqueueRequestsFromMapFunc(r.flowcontrollerToRailConfigs),

@@ -57,6 +57,10 @@ type RailTopology struct {
 
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigSpec struct {
+	// PlanParamsRef names a same-namespace DMSPlanParams. When set, every selected
+	// node must have current resolved bindings before networking reconciliation.
+	// +optional
+	PlanParamsRef string `json:"planParamsRef,omitempty"`
 	// +kubebuilder:default:=true
 	DraEnabled bool `json:"draEnabled,omitempty"`
 	// VFStateFollow enables mirroring the PF carrier state to VF representors.

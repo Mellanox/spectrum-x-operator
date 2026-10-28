@@ -124,6 +124,7 @@ clean: ## clean files
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	install -m 0644 "$$(go list -m -f '{{.Dir}}' github.com/Mellanox/dms-lib/api)/config/crd/bases/dms.nvidia.com_dmsplanparams.yaml" config/crd/bases/dms.nvidia.com_dmsplanparams.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

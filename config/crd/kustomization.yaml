@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/spectrumx.nvidia.com_spectrumxrailpoolconfigs.yaml
+- bases/dms.nvidia.com_dmsplanparams.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

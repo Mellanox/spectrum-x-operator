@@ -81,6 +81,11 @@ spec:
                   hw-offload, hw-offload-ct-size, max-idle). Keys matching an internal
                   option override its value; all other keys are added as-is.
                 type: object
+              planParamsRef:
+                description: |-
+                  PlanParamsRef names a same-namespace DMSPlanParams. When set, every selected
+                  node must have current resolved bindings before networking reconciliation.
+                type: string
               railTopology:
                 description: Rails topology list
                 items:
