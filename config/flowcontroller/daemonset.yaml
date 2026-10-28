@@ -66,6 +66,8 @@ spec:
         volumeMounts:
         - name: proc
           mountPath: /proc
+        - name: devices
+          mountPath: /dev
         - name: sys
           mountPath: /sys
         - name: ovs
@@ -84,6 +86,9 @@ spec:
             cpu: 10m
             memory: 64Mi
       volumes:
+      - name: devices
+        hostPath:
+          path: /dev
       - name: proc
         hostPath:
           path: /proc
