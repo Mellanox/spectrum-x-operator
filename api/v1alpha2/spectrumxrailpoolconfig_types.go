@@ -57,6 +57,10 @@ type RailTopology struct {
 
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
 type SpectrumXRailPoolConfigSpec struct {
+	// DMSPlanParamsRef selects the same-namespace DMS plan supplying xplane configuration.
+	// When omitted, xplane retains its existing OVS-based configuration.
+	// +optional
+	DMSPlanParamsRef string `json:"dmsPlanParamsRef,omitempty"`
 	// +kubebuilder:default:=true
 	DraEnabled bool `json:"draEnabled,omitempty"`
 	// VFStateFollow enables mirroring the PF carrier state to VF representors.

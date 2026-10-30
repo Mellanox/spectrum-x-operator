@@ -3,8 +3,8 @@ module github.com/Mellanox/spectrum-x-operator
 go 1.26.0
 
 require (
-	github.com/Mellanox/dms-lib v0.0.0-20261028160707-ba7736550546
-	github.com/Mellanox/dms-lib/api v0.0.0-20261028160707-ba7736550546
+	github.com/Mellanox/dms-lib v0.0.0-20261029094238-9db732a9f4ce
+	github.com/Mellanox/dms-lib/api v0.0.0-20261029094238-9db732a9f4ce
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-logr/logr v1.4.4
 	github.com/golang/mock v1.6.0
@@ -17,10 +17,12 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/sys v0.49.0
 	k8s.io/api v0.34.12
+	k8s.io/apiextensions-apiserver v0.34.3
 	k8s.io/apimachinery v0.34.12
 	k8s.io/client-go v0.34.12
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/controller-runtime v0.22.5
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -130,13 +132,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9 // indirect
-	k8s.io/apiextensions-apiserver v0.34.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
 replace github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
