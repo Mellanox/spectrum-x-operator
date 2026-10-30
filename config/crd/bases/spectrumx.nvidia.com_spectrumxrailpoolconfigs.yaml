@@ -48,6 +48,11 @@ spec:
             description: SpectrumXRailPoolConfigSpec defines the desired state of
               SpectrumXRailPoolConfig.
             properties:
+              dmsPlanParamsRef:
+                description: |-
+                  DMSPlanParamsRef selects the same-namespace DMS plan supplying xplane configuration.
+                  When omitted, xplane retains its existing OVS-based configuration.
+                type: string
               draEnabled:
                 default: true
                 type: boolean

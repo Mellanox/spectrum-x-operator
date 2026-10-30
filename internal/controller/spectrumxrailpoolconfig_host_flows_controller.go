@@ -22,6 +22,9 @@ import (
 	"fmt"
 	"net"
 
+	dmsv1 "github.com/Mellanox/dms-lib/api/v1alpha1"
+	"github.com/Mellanox/dms-lib/pkg/device"
+
 	"github.com/go-logr/logr"
 
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -123,6 +126,7 @@ type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	// hostRoot prefixes safe-start install paths in tests; empty in production
 	// where /var/lib/spectrum-x and the ovs drop-in dir are bind-mounted.
 	hostRoot string
+	discover func(context.Context) (device.Inventory, error)
 }
 
 func NewSpectrumXRailPoolConfigHostFlowsReconciler(
@@ -140,6 +144,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 		exec:     execAPI,
 		bridge:   bridge,
 		nodeName: nodeName,
+		discover: discoverPlanInventory,
 	}
 }
 
@@ -317,6 +322,25 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopologies(ctx
 			return err
 		}
 	}
+	if rpc.Spec.DMSPlanParamsRef == "" {
+		return nil
+	}
+	multiplane, ready := false, true
+	for i := range rpc.Spec.RailTopology {
+		rt := &rpc.Spec.RailTopology[i]
+		if len(rt.NicSelector.PfNames) < 2 {
+			continue
+		}
+		multiplane = true
+		configured, err := r.configureXPlane(ctx, &rpc.Spec, rt, rpc.Namespace)
+		if err != nil {
+			return err
+		}
+		ready = ready && configured
+	}
+	if multiplane && ready {
+		return r.deployXplane(ctx, r.Client, rpc, r.Scheme, rpc.Namespace, config.FromEnv())
+	}
 	return nil
 }
 
@@ -389,30 +413,33 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		return fmt.Errorf("error while patching %s %s: %w", ovsNetwork.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(ovsNetwork), err)
 	}
 
-	if len(rt.NicSelector.PfNames) > 1 {
-		log.V(1).Info("configuring xplane for rail topology", "railTopology", rt.Name)
-		if err := r.configureXPlane(ctx, rpc, spec, &rt, namespace); err != nil {
-			return fmt.Errorf("failed to configure xplane for rail topology %s: %w", rt.Name, err)
+	// Keep the original per-rail deployment flow for pools without a plan.
+	if isMultiplane && rpc.Spec.DMSPlanParamsRef == "" {
+		ready, err := r.configureXPlane(ctx, spec, &rt, namespace)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return r.deployXplane(ctx, r.Client, rpc, r.Scheme, namespace, config.FromEnv())
 		}
 	}
-
 	log.V(1).Info("reconcileRailTopology completed", "railTopology", rt.Name)
 	return nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, namespace string) error {
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, namespace string) (bool, error) {
 	log := log.FromContext(ctx)
 	log.V(1).Info("configureXPlane started", "railTopology", rt.Name, "nodeName", r.nodeName)
 
 	// Install the OVS safe-start hook early so the next ovs-vswitchd start is
 	// protected even if we are still waiting on SriovNetworkNodeState/switchdev.
 	if err := ovssafestart.EnsureInstalled(r.hostRoot); err != nil {
-		return fmt.Errorf("failed to install ovs safe-start hook: %w", err)
+		return false, fmt.Errorf("failed to install ovs safe-start hook: %w", err)
 	}
 
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList, client.MatchingLabels(spec.NodeSelector)); err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
+		return false, fmt.Errorf("failed to list nodes: %w", err)
 	}
 	log.V(1).Info("listed nodes for xplane configuration", "count", len(nodeList.Items))
 
@@ -423,9 +450,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 		nsn := types.NamespacedName{Name: node.Name, Namespace: namespace}
 		if err := r.Get(ctx, nsn, nodeState); err != nil {
 			if apierrors.IsNotFound(err) {
-				return nil
+				return false, nil
 			}
-			return fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
+			return false, fmt.Errorf("failed to get SriovNetworkNodeState for node %s: %w", node.Name, err)
 		}
 		if node.Name == r.nodeName {
 			localNodeState = nodeState
@@ -434,27 +461,22 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) configureXPlane(ctx context
 
 	if localNodeState == nil {
 		log.V(1).Info("local node is not part of this pool, skipping xplane configuration", "nodeName", r.nodeName)
-		return nil
+		return false, nil
 	}
 
 	if !pfsInSwitchdevMode(localNodeState, rt.NicSelector.PfNames) {
 		log.Info("waiting for PFs to enter switchdev before creating xplane bridges",
 			"railTopology", rt.Name, "pfNames", rt.NicSelector.PfNames)
-		return nil
+		return false, nil
 	}
 
 	log.V(1).Info("creating xplane bridges", "railTopology", rt.Name)
 	err := r.createXPlaneBridges(ctx, rt, localNodeState)
 	if err != nil {
-		return fmt.Errorf("failed to create X-Plane bridges: %w", err)
+		return false, fmt.Errorf("failed to create X-Plane bridges: %w", err)
 	}
-	log.V(1).Info("deploying xplane", "namespace", namespace)
-	if err := r.deployXplane(ctx, r.Client, rpc, r.Scheme, namespace, config.FromEnv()); err != nil {
-		return fmt.Errorf("failed to deploy xplane: %w", err)
-	}
-
 	log.V(1).Info("configureXPlane completed", "railTopology", rt.Name)
-	return nil
+	return true, nil
 }
 
 // pfsInSwitchdevMode reports whether every requested PF is present in the
@@ -489,7 +511,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deployXplane(ctx context.Co
 	if err != nil {
 		return err
 	}
+	planConfig, err := r.prepareXplaneConfig(ctx, poolConfig)
+	if err != nil {
+		return err
+	}
 	data := render.MakeRenderData()
+	data.Data["PlanConfig"] = planConfig
 	data.Data["Namespace"] = namespace
 	data.Data["ImagePullSecrets"] = cfg.ImagePullSecrets
 	data.Data["Image"] = fmt.Sprintf("%s/%s:%s", cfg.XPlaneRepository, cfg.XPlaneImage, cfg.XPlaneVersion)
@@ -1170,6 +1197,9 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.cidrPoolToRailConfigs),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
+		Watches(&v1.Node{}, handler.EnqueueRequestsFromMapFunc(r.xplanePlanInputToPools), builder.WithPredicates(planNodePredicate())).
+		Watches(&dmsv1.DMSPlanParams{}, handler.EnqueueRequestsFromMapFunc(r.xplanePlanInputToPools), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&v1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.xplanePlanInputToPools)).
 		WatchesRawSource(source.Channel(ovsWatcher, railListerHandler)).
 		Named("spectrumxrailpoolconfig-host-flows").Complete(reconcile.AsReconciler[*v1alpha2.SpectrumXRailPoolConfig](r.Client, r))
 }

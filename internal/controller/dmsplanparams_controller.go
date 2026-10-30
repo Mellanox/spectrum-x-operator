@@ -46,11 +46,7 @@ type DMSPlanParamsReconciler struct {
 func NewDMSPlanParamsReconciler(c client.Client, reader client.Reader, nodeName string) *DMSPlanParamsReconciler {
 	return &DMSPlanParamsReconciler{
 		Client: c, reader: reader, nodeName: nodeName,
-		discover: func(ctx context.Context) (device.Inventory, error) {
-			discoveryContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			defer cancel()
-			return device.Discover(discoveryContext, device.Options{Timeout: 30 * time.Second})
-		},
+		discover: discoverPlanInventory,
 	}
 }
 
@@ -101,7 +97,13 @@ func (r *DMSPlanParamsReconciler) resolveHost(ctx context.Context, params *dmsv1
 	return result
 }
 
-func (r *DMSPlanParamsReconciler) resolve(ctx context.Context, spec dmsv1.DMSPlanSpec, data []byte) (*dmsv1.TargetMap, error) {
+func discoverPlanInventory(ctx context.Context) (device.Inventory, error) {
+	discoveryContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return device.Discover(discoveryContext, device.Options{Timeout: 30 * time.Second})
+}
+
+func buildHostPlan(ctx context.Context, spec dmsv1.DMSPlanSpec, data []byte, discover func(context.Context) (device.Inventory, error)) (*plan.Plan, error) {
 	blueprint, err := plan.Load(data)
 	if err != nil {
 		return nil, err
@@ -110,11 +112,15 @@ func (r *DMSPlanParamsReconciler) resolve(ctx context.Context, spec dmsv1.DMSPla
 	if err != nil {
 		return nil, err
 	}
-	inventory, err := r.discover(ctx)
+	inventory, err := discover(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("discover host: %w", err)
 	}
-	compiled, err := plan.BuildFromInventory(ctx, blueprint, inventory, options)
+	return plan.BuildFromInventory(ctx, blueprint, inventory, options)
+}
+
+func (r *DMSPlanParamsReconciler) resolve(ctx context.Context, spec dmsv1.DMSPlanSpec, data []byte) (*dmsv1.TargetMap, error) {
+	compiled, err := buildHostPlan(ctx, spec, data, r.discover)
 	if err != nil {
 		return nil, err
 	}
