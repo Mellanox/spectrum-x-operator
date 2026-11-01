@@ -30,9 +30,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var planeIDRe = regexp.MustCompile(`external_ids:plane_id=(\d+)`)
+var planeIDRe = regexp.MustCompile(`external_ids:xplane-plane-id=(\d+)`)
 
-var _ = Describe("createXPlaneBridges plane_id", func() {
+var _ = Describe("createXPlaneBridges xplane-plane-id", func() {
 	var (
 		execMock   *exec.MockAPI
 		mockCtrl   *gomock.Controller
@@ -55,16 +55,17 @@ var _ = Describe("createXPlaneBridges plane_id", func() {
 		mockCtrl.Finish()
 	})
 
-	// uplinkPlaneIDs returns the plane_id values from the per-PF uplink add-port
-	// commands, in the order the ports were created.
+	// uplinkPlaneIDs returns the xplane-plane-id values from the per-PF uplink
+	// add-port commands, in the order the ports were created.
 	uplinkPlaneIDs := func() []int {
 		var ids []int
 		for _, cmd := range commands {
 			if !strings.Contains(cmd, "external_ids:xplane-uplink=true") {
 				continue
 			}
+			Expect(cmd).NotTo(ContainSubstring("external_ids:plane_id="))
 			match := planeIDRe.FindStringSubmatch(cmd)
-			Expect(match).NotTo(BeNil(), "expected plane_id external_id in command: %s", cmd)
+			Expect(match).NotTo(BeNil(), "expected xplane-plane-id external_id in command: %s", cmd)
 			id, err := strconv.Atoi(match[1])
 			Expect(err).NotTo(HaveOccurred())
 			ids = append(ids, id)
@@ -72,7 +73,7 @@ var _ = Describe("createXPlaneBridges plane_id", func() {
 		return ids
 	}
 
-	DescribeTable("computes plane_id as len(pfNames)*swPlane + pfName index",
+	DescribeTable("computes xplane-plane-id as len(pfNames)*swPlane + pfName index",
 		func(swPlane int, pfNames []string, wantPlaneIDs []int) {
 			rt := &v1alpha2.RailTopology{
 				Name: "rail-x",
