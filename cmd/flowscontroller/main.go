@@ -17,7 +17,6 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -25,7 +24,6 @@ import (
 
 	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
-	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
 	"github.com/Mellanox/spectrum-x-operator/internal/vfstatefollower"
 	"github.com/Mellanox/spectrum-x-operator/pkg/exec"
 	"github.com/Mellanox/spectrum-x-operator/pkg/filewatcher"
@@ -67,7 +65,6 @@ var Options struct {
 	NodeName string `env:"NODE_NAME"`
 }
 
-//nolint:funlen
 func main() {
 	var metricsAddr string
 	var probeAddr string
@@ -120,9 +117,10 @@ func main() {
 			TLSOpts:       tlsOpts,
 		},
 		Cache: cache.Options{
-			// To reduce cache memory consumption, only pods on on the same node as the reconciler will be added to the cache:
+			// To reduce cache memory consumption, only pods on the same node as the controller will be added to the cache:
 			// 1) List calls using the controller Manager client will only return Pods with `spec.nodeName` set to nodeName
 			// 2) Get calls for pods not in the cache will never find the pod.
+			// The controller only needs its own Pod, to resolve the owning DaemonSet.
 			ByObject: map[client.Object]cache.ByObject{
 				&corev1.Pod{}: {Field: fields.SelectorFromSet(map[string]string{"spec.nodeName": Options.NodeName})},
 			},
@@ -135,49 +133,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	ovsWatcherFlowsController := make(chan event.TypedGenericEvent[struct{}])
 	ovsWatcherHostFlows := make(chan event.GenericEvent)
 
 	filewatcher.WatchFile("/var/run/openvswitch/ovs-vswitchd.pid", func() {
-		ovsWatcherFlowsController <- event.TypedGenericEvent[struct{}]{}
 		ovsWatcherHostFlows <- event.GenericEvent{}
 	}, nil)
 
-	// index pods by node name, used by the FlowReconciler to watch relevant pods
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&corev1.Pod{},
-		"spec.nodeName",
-		func(obj client.Object) []string {
-			pod := obj.(*corev1.Pod)
-			return []string{pod.Spec.NodeName}
-		},
-	); err != nil {
-		setupLog.Error(err, "unable to index pods by node name")
-		os.Exit(1)
-	}
-
 	execAPI := &exec.Exec{}
-	flowsAPI := &controller.Flows{Exec: execAPI}
-
-	if err = (&controller.FlowReconciler{
-		NodeName:   Options.NodeName,
-		Client:     mgr.GetClient(),
-		Exec:       execAPI,
-		Flows:      flowsAPI,
-		OVSWatcher: ovsWatcherFlowsController,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Pod")
-		os.Exit(1)
-	}
-
-	staleFlowsCleaner := &staleflows.Cleaner{
-		Client:          mgr.GetClient(),
-		Flows:           flowsAPI,
-		CleanupInterval: 5 * time.Minute,
-	}
-
-	staleFlowsCleaner.StartCleanupRoutine(context.Background())
 
 	hostManager, err := sriovhost.NewDefaultHostManager()
 	if err != nil {
@@ -188,7 +150,6 @@ func main() {
 	hostFlowsReconciler := controller.NewSpectrumXRailPoolConfigHostFlowsReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
-		flowsAPI,
 		execAPI,
 		hostManager,
 		Options.NodeName,

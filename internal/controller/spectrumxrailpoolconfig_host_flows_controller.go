@@ -115,7 +115,6 @@ const (
 type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	flows    FlowsAPI
 	exec     exec.API
 	bridge   sriovhosttypes.BridgeInterface
 	nodeName string
@@ -128,7 +127,6 @@ type SpectrumXRailPoolConfigHostFlowsReconciler struct {
 func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 	client client.Client,
 	scheme *runtime.Scheme,
-	flows FlowsAPI,
 	execAPI exec.API,
 	bridge sriovhosttypes.BridgeInterface,
 	nodeName string,
@@ -136,7 +134,6 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 	return &SpectrumXRailPoolConfigHostFlowsReconciler{
 		Client:   client,
 		Scheme:   scheme,
-		flows:    flows,
 		exec:     execAPI,
 		bridge:   bridge,
 		nodeName: nodeName,
@@ -150,6 +147,9 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=ovsnetworks,verbs=create;patch;get;list;watch;update;delete
 // +kubebuilder:rbac:groups=sriovnetwork.openshift.io,resources=sriovnetworknodestates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=nv-ipam.nvidia.com,resources=cidrpools,verbs=get;list;watch
 

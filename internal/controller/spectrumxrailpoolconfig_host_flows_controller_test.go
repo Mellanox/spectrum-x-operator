@@ -260,7 +260,7 @@ var _ = Describe("SpectrumXRailPoolConfigHostFlowsReconciler status", func() {
 			WithStatusSubresource(&v1alpha2.SpectrumXRailPoolConfig{}).
 			WithObjects(objects...).
 			Build()
-		return NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, nil, localNodeName)
+		return NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, localNodeName)
 	}
 
 	It("does not skip a selected local node missing current node state when the global status already succeeded", func() {
@@ -406,7 +406,7 @@ var _ = Describe("reconcileRailTopology SriovNetworkNodePolicy numVfs", func() {
 			WithScheme(scheme.Scheme).
 			WithObjects(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}).
 			Build()
-		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, nil, "test-node")
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, nil, "test-node")
 		reconciler.hostRoot = GinkgoT().TempDir()
 	})
 
@@ -513,7 +513,7 @@ var _ = Describe("generateSRIOVNetworkPoolConfig OvsConfig merge", func() {
 
 	BeforeEach(func() {
 		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(
-			fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(), scheme.Scheme, nil, nil, nil, "")
+			fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(), scheme.Scheme, nil, nil, "")
 	})
 
 	It("applies the built-in defaults when user OvsConfig is empty", func() {
@@ -573,7 +573,7 @@ var _ = Describe("createXPlaneBridges ovs-vsctl failures", func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		execMock = exec.NewMockAPI(mockCtrl)
 		commands = nil
-		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, nil, execMock, nil, "test-node")
+		reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, execMock, nil, "test-node")
 		rt = &v1alpha2.RailTopology{
 			Name:        "rail-x",
 			MTU:         9000,
@@ -673,7 +673,7 @@ var _ = Describe("cleanupXPlaneBridges ovs-vsctl failures", func() {
 
 	Describe("cleanupXPlaneBridges", func() {
 		BeforeEach(func() {
-			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, nil, execMock, nil, localNodeName)
+			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(nil, nil, execMock, nil, localNodeName)
 		})
 
 		It("returns an error and stops when deleting a bridge times out", func() {
@@ -717,7 +717,7 @@ var _ = Describe("cleanupXPlaneBridges ovs-vsctl failures", func() {
 				WithStatusSubresource(&v1alpha2.SpectrumXRailPoolConfig{}).
 				WithObjects(node, rpc).
 				Build()
-			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, nil, execMock, nil, localNodeName)
+			reconciler = NewSpectrumXRailPoolConfigHostFlowsReconciler(fakeClient, scheme.Scheme, execMock, nil, localNodeName)
 		})
 
 		It("keeps the finalizer and marks the node Failed when bridge cleanup times out", func() {
