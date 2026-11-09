@@ -3,7 +3,7 @@ module github.com/Mellanox/spectrum-x-operator
 go 1.26.0
 
 require (
-	github.com/Mellanox/dms-lib v0.0.0-20261029094238-9db732a9f4ce
+	github.com/Mellanox/dms-lib v0.0.0-20261109113913-97eefede15f5
 	github.com/Mellanox/dms-lib/api v0.0.0-20261029094238-9db732a9f4ce
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-logr/logr v1.4.4

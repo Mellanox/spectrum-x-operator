@@ -330,7 +330,7 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		Expect(r.publish(ctx, params, resolved(0))).NotTo(Succeed())
 	})
-	It("passes declaration strings unchanged and lets the real compiler preserve their types", func() {
+	It("passes declaration strings unchanged and preserves the CLI planner parameter values", func() {
 		params.Spec.Parameters = map[string]string{"value": "0", "large": "9007199254740993", "flag": "false", "text": "001", "mode": "0"}
 		params.Spec.SPXGS = ptr.To(false)
 		options, err := planBuildOptions(params.Spec)
@@ -340,8 +340,8 @@ var _ = Describe("DMSPlanParams host resolution", func() {
 		Expect(err).NotTo(HaveOccurred())
 		compiled, err := plan.Build(ctx, b, planTestInventory().Devices, options)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(compiled.Info().Parameters).To(SatisfyAll(HaveKeyWithValue("value", 0), HaveKeyWithValue("large", int(9007199254740993)),
-			HaveKeyWithValue("flag", false), HaveKeyWithValue("text", "001"), HaveKeyWithValue("mode", 0), HaveKeyWithValue("SP_XGS", false)))
+		Expect(compiled.Info().Parameters).To(SatisfyAll(HaveKeyWithValue("value", json.Number("0")), HaveKeyWithValue("large", json.Number("9007199254740993")),
+			HaveKeyWithValue("flag", "false"), HaveKeyWithValue("text", "001"), HaveKeyWithValue("mode", json.Number("0")), HaveKeyWithValue("SP_XGS", "false")))
 		options.Parameters["text"] = ""
 		compiled, err = plan.Build(ctx, b, planTestInventory().Devices, options)
 		Expect(err).NotTo(HaveOccurred())
