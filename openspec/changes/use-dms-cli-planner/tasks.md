@@ -9,7 +9,7 @@
 - [x] 2.1 Verify the stock DOCA 3.6.0082-1 runtime with all 12 public planner integration cases.
 - [x] 2.2 Pass the complete controller suite and remaining consumer unit suites with the real stock runtime.
 - [x] 2.3 Pass Linux lint, generation, build and strict OpenSpec validation.
-- [ ] 2.4 Build and publish the Linux/amd64 operator image and separate test-only reconciler image with exact source and digest evidence.
+- [x] 2.4 Build and publish the Linux/amd64 operator image and separate test-only reconciler image with exact source and digest evidence.
 
 Cluster qualification is performed separately. Xplane configuration generation, delivery and startup are excluded from hardware qualification; its existing controller unit coverage still runs.
 
