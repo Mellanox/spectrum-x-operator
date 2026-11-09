@@ -8,10 +8,53 @@ jobs:
   ci:
     uses: Mellanox/cloud-orchestration-reusable-workflows/.github/workflows/go-ci-reusable.yml@main
     with:
-      coverage-file: cover.out
+      test-command: ''
       validate-command: |
         go mod tidy
         git diff --exit-code
         make generate
         make manifests
         git diff --exit-code
+
+  unit-test:
+    name: Unit tests (DOCA runtime)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: nvcr.io/nvstaging/doca/doca@sha256:7dfc5c52590a097610bf07e0026fac281ec4e46e4f9934d64c5704849b9567a3
+      credentials:
+        username: ${{ secrets.NVCR_USERNAME }}
+        password: ${{ secrets.NVCR_TOKEN }}
+    env:
+      GOPRIVATE: github.com/Mellanox/dms-lib
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install build prerequisites from Ubuntu
+        run: |
+          runtime_apt_options=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          apt-get "${runtime_apt_options[@]}" update
+          apt-get "${runtime_apt_options[@]}" install -y git make gcc libc6-dev
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Configure private module authentication
+        run: |
+          git config --global credential.https://github.com.helper "!f() { printf 'username=x-access-token\npassword=%s\n' \"\$DMS_GITHUB_TOKEN\"; }; f"
+      - name: Run unit tests with the real CLI planner
+        env:
+          DMS_GITHUB_TOKEN: ${{ secrets.GH_TOKEN_NVIDIA_CI_CD }}
+        run: |
+          test -n "$DMS_GITHUB_TOKEN"
+          make unit-test
+          test -s cover.out
+      - name: Upload Go coverage
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ github.token }}
+          build-number: ${{ github.run_id }}-${{ github.run_attempt }}
+          file: cover.out

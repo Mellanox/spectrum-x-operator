@@ -22,3 +22,12 @@ Consumer validation SHALL exercise the real compatible DMS CLI and planner, incl
 
 - **WHEN** host-binding qualification excludes xplane delivery and startup
 - **THEN** its test manager registers only the existing DMSPlanParams reconciler and reports image packaging separately from hardware or service readiness
+
+### Requirement: Provision the real planner for hosted unit tests
+
+The repository SHALL run its complete unit-test target in the immutable compatible DOCA runtime using existing registry and repository credentials, while retaining other reusable CI checks and coverage upload.
+
+#### Scenario: Hosted controller tests call the planner
+
+- **WHEN** CI executes controller cases that compile a structured plan
+- **THEN** the installed real CLI and planner execute those cases without mocking or skipping them

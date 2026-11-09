@@ -7,6 +7,7 @@ Host-plan compilation must use the shared library revision that delegates planni
 - Pin the published dms-lib planner revision while retaining the unchanged shared API module.
 - Extend the controller test schema with the blueprint plan action and preserve exact parameter-value assertions across CLI JSON decoding.
 - Verify the existing consumer with the stock DOCA 3.6 runtime and Linux/amd64 image build.
+- Move the complete hosted unit-test target into that immutable runtime while preserving other reusable CI checks and coverage.
 
 ## Capabilities
 
