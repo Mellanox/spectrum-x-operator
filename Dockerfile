@@ -23,6 +23,7 @@ ARG TARGETARCH
 ARG GCFLAGS
 ARG GOPROXY
 ENV GOPROXY=$GOPROXY
+ENV GOPRIVATE=github.com/Mellanox/dms-lib,gitlab-master.nvidia.com
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -32,7 +33,7 @@ COPY go.sum go.sum
 # and so that source changes don't invalidate our downloaded layer
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=secret,id=netrc,target=/root/.netrc \
-    GOPRIVATE=github.com/Mellanox/dms-lib go mod download
+    go mod download
 
 # Copy the go source
 COPY ./ ./
@@ -43,6 +44,9 @@ COPY ./ ./
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN --mount=type=cache,target=/go/pkg/mod/ GO_GCFLAGS=${GCFLAGS} make build
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=secret,id=netrc,target=/root/.netrc \
+    ./hack/build-dms-planner.sh /workspace/build/dms-blueprints-planner
 
 FROM ${BASE_IMAGE_DOCA_FULL_RT_HOST:-nvcr.io/nvstaging/doca/doca:full-rt-3.5.0-host-dev}
 
@@ -59,6 +63,7 @@ RUN dpkg --purge collectx || apt-get remove --purge -y collectx || true && \
 
 WORKDIR /
 COPY --from=builder /workspace/build/flowcontroller .
+COPY --from=builder /workspace/build/dms-blueprints-planner /usr/local/libexec/dms-blueprints-lib/planner
 # Copy sources to /src
 COPY --from=builder /workspace /src
 COPY manifests /manifests

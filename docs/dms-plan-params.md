@@ -73,15 +73,27 @@ API-server publication failures are returned for normal reconciliation retry.
 The shared CRD comes from the pinned `github.com/Mellanox/dms-lib/api` module;
 `make manifests` copies its generated CRD and generates controller RBAC. Install
 that CRD and RBAC before upgrading the flows daemon: its new controller watch
-is required for manager startup. Local
-discovery requires compatible DOCA tools and schemas, host `/sys`, and host
-`/dev` for fwctl discovery. This change does not update the daemon's DOCA base
-image. DOCA 3.6 qualification does not establish compatibility with every image.
+is required for manager startup. The schema retains upstream naming modes and
+explicit physical port fields.
+
+Versioned GitLab replacements retain the established Go imports. The image
+build checks that the root and API replacements use the same revision, then
+`hack/build-dms-planner.sh` builds the preserved `doSpcx` planner at that version.
+It is installed at `/usr/local/libexec/dms-blueprints-lib/planner`; planning does
+not fall back to the installed DOCA planner.
+
+The currently pinned preserved library supports planning from supplied inventory,
+but discovery is explicitly unsupported and incomplete. The unchanged production
+reconciler therefore publishes unresolved status when it requests discovery.
+Selected service payloads are also unsupported by `GetServiceConfig`. Captured
+inventory tests do not establish live discovery, NIC mutation, service payload
+generation, delivery or startup. Earlier qualification below used a different
+library revision and does not establish these capabilities for this migration.
 
 The library is currently private. Dependency download and image builds need
 repository read access; this change does not grant credentials or alter library
-visibility. The Dockerfile accepts an optional BuildKit secret named `netrc`
-for its existing dependency-download step, for example
+visibility. The Dockerfile accepts a BuildKit secret named `netrc`
+for private library and matching planner downloads, for example
 `--secret id=netrc,src=/path/to/authorized.netrc`. The secret is not copied into
 the image. Hosted CI without repository access cannot fetch the dependency.
 
