@@ -1,16 +1,11 @@
-## 1. Wire published dependencies and planner packaging
+## Implementation
+- [x] Remove planner executable build helper and Docker packaging.
+- [x] Retain established library consumer interfaces.
+- [x] Pin library/API f89d1f2937ff and shared planner 54bb3fa91b4c.
 
-- [x] 1.1 Pin versioned GitLab root/API replacements while retaining imports and the required Go minimum.
-- [x] 1.2 Build the matching preserved planner using the same guarded helper as the other consumer.
-- [x] 1.3 Copy the shared generated CRD and verify naming/physical port schema fields.
-
-## 2. Validate the bounded migration
-
-- [x] 2.1 Run Linux build, unchanged full unit suite, lint and generation checks; retain unsupported feature failures.
-- [x] 2.2 Prepare the opt-in caller-owned status test outside product commits and compile its test-only image assets.
-- [ ] 2.3 Validate strict change structure and review the exact diff before committing or opening a PR.
-- [ ] 2.4 Build and publish the authorized Linux/amd64 image with module, planner and image identity evidence.
-
-Cluster deployment and captured-inventory qualification are coordinator-owned. Neither image generation nor an injected inventory establishes live discovery, NIC mutation or xplane readiness.
-
-Local results: Linux build, lint (zero issues), vet and generation pass. The unchanged controller suite runs all 146 cases: 137 pass and 9 fail (seven unsupported service-payload cases, one conservative discovery-issue rejection, and one diagnostic parameter-type assertion). No existing assertion was relaxed. The opt-in external test source compiles; in-cluster execution and test-image approval remain separate.
+## Validation
+- [x] Run Linux/amd64 build, full existing tests and race tests; retain failures.
+- [ ] Resolve declared boolean compatibility failure (GitLab library issue 3); seven Xplane failures remain outside this validation scope. The existing staleflows race is tracked in operator issue 353.
+- [x] Run lint and generated-file checks (both pass; generation unchanged).
+- [ ] Publish updated draft PR with exact results and remaining limits.
+- [ ] Build exact-pin images and perform separately attributed hardware validation.

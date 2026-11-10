@@ -3,8 +3,8 @@ module github.com/Mellanox/spectrum-x-operator
 go 1.26.3
 
 require (
-	github.com/Mellanox/dms-lib v0.0.0-20261109140311-954b6bd3f5aa
-	github.com/Mellanox/dms-lib/api v0.0.0-20261109140311-954b6bd3f5aa
+	github.com/Mellanox/dms-lib v0.0.0-20261110100006-f89d1f2937ff
+	github.com/Mellanox/dms-lib/api v0.0.0-20261110100006-f89d1f2937ff
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-logr/logr v1.4.4
 	github.com/golang/mock v1.6.0
@@ -27,6 +27,7 @@ require (
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
@@ -44,6 +45,7 @@ require (
 	github.com/coreos/ignition/v2 v2.25.1 // indirect
 	github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
@@ -78,6 +80,7 @@ require (
 	github.com/google/renameio/v2 v2.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jaypipes/ghw v0.21.2 // indirect
 	github.com/jaypipes/pcidb v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -89,6 +92,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nikolalohinski/gonja/v2 v2.8.0 // indirect
+	github.com/openconfig/goyang v1.6.0 // indirect
 	github.com/openshift/api v0.0.0-20251204164930-cd2e40c5883a // indirect
 	github.com/ovn-kubernetes/libovsdb v0.8.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -99,8 +104,10 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/safchain/ethtool v0.7.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
@@ -112,8 +119,9 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
+	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
@@ -126,8 +134,9 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
+	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
+	nvidia.com/doca/dms/doSpcx v0.0.0-20261110095732-54bb3fa91b4c // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
@@ -135,6 +144,8 @@ require (
 
 replace github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
 
-replace github.com/Mellanox/dms-lib => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib v0.0.0-20261109140311-954b6bd3f5aa
+replace github.com/Mellanox/dms-lib => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib v0.0.0-20261110100006-f89d1f2937ff
 
-replace github.com/Mellanox/dms-lib/api => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib/api v0.0.0-20261109140311-954b6bd3f5aa
+replace github.com/Mellanox/dms-lib/api => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib/api v0.0.0-20261110100006-f89d1f2937ff
+
+replace nvidia.com/doca/dms/doSpcx => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/doSpcx v0.0.0-20261110095732-54bb3fa91b4c

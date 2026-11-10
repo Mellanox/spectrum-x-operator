@@ -1,15 +1,22 @@
-## Decision
+# Design
 
-Retain the established github.com/Mellanox/dms-lib imports and use real versioned replacements for GitLab .git/lib and .git/lib/api. A small shared build helper checks the exact library replacement path and matching API version, downloads .git/doSpcx at that same version, and builds its ./planner entrypoint with readonly module files. Docker installs the resulting binary at /usr/local/libexec/dms-blueprints-lib/planner. The library has no PATH or installed-DMS planner fallback.
+Keep existing library imports with exact versioned GitLab replacements. Go does
+not inherit dependency replacements, so the consumer also pins the canonical
+`nvidia.com/doca/dms/doSpcx` module to the library's published source revision.
+The core planner is linked into the operator. No runtime planner executable or
+build-dms-planner helper is needed. Existing DMS commands still use dms-cli.
 
-Building from a sibling checkout would not survive an isolated Docker context. Using the installed DOCA planner would not establish that the reviewed upstream revision was packaged. A separate independently chosen planner version would create unnecessary compatibility drift; derive it from the root replacement instead.
+Controller calls retain the established plan API. No controller or test
+assertions change. Upstream host-k8s planning does not return rendered service
+payloads: seven existing Xplane assertions remain failing, outside the requested
+hardware validation scope. The string `"false"` for a declared bool also remains
+a string, unlike the former compiler; GitLab library issue 3 tracks this confirmed
+compatibility gap. Full compatibility is not claimed while it remains unresolved.
 
-## Validation boundary
+Authenticated private GitLab access is required. Clean-container anonymous
+repository and module retrieval fails; public CI needs supported credentials or
+an authorized access change. This change does not alter project visibility.
 
-Use the immutable selected DOCA runtime for Linux/amd64 validation, with the original Go 1.27 operator builder. Preserve all existing regular feature assertions. Record unsupported discovery/service behavior and full-suite failures rather than replacing assertions with successful stubs. Hosted private-fetch access is a separate condition from authenticated local module downloads.
-
-A test-only opt-in Ginkgo source is retained outside product commits and compiled through the existing controller test seam. It calls only DMSPlanParams reconciliation against caller-owned test resources. Real candidate status responses establish attribution when production controllers also watch that namespace. Captured-inventory planning is distinct from discovery, and a synthetic product mismatch verifies failure/recovery without changing production input or invoking service writers. The existing envtest suite bootstrap remains intact; deployment and cluster writes belong to the coordinator.
-
-## Provenance
-
-Retain module download version, checksum and Origin.Hash, plus the installed planner binary hash. A binary built by go -C inside a downloaded module can report its main module as devel; that value alone does not establish a source revision.
+Validate build, existing tests, race tests, lint and generation separately from
+image publication and hardware qualification. Previous subprocess/stub-based
+image results do not qualify this version.
