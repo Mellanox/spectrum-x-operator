@@ -342,14 +342,31 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		ownerLabels[labelMultiplane] = labelMultiplaneValue
 	}
 
+	// Do not override a user-defined policy that happens to have the same name.
+	existingPolicy, err := r.getControllerOwnedPolicy(ctx, rt.Name, namespace)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
 	// Primary policy: first PF with numVfs VFs for GPU-to-GPU RDMA traffic.
 	log.V(1).Info("generating primary SriovNetworkNodePolicy", "railTopology", rt.Name, "pf", firstPF, "numVfs", spec.NumVfs)
 	policy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name, rt.Name, []string{firstPF}, spec.NumVfs, isMultiplane, namespace)
 	policy.Labels = ownerLabels
 
-	log.V(1).Info("patching primary SriovNetworkNodePolicy", "name", policy.Name)
-	if err := r.Patch(ctx, policy, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
-		return fmt.Errorf("error while patching %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
+	if apierrors.IsNotFound(err) {
+		// Create (not apply) so that a policy created by a user after our read fails with AlreadyExists
+		// instead of being silently overwritten.
+		log.V(1).Info("creating primary SriovNetworkNodePolicy", "name", policy.Name)
+		if err := r.Create(ctx, policy, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
+			return fmt.Errorf("error while creating %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
+		}
+	} else {
+		// resourceVersion makes the apply fail with a conflict if the policy changed since we checked ownership.
+		policy.ResourceVersion = existingPolicy.ResourceVersion
+		log.V(1).Info("patching primary SriovNetworkNodePolicy", "name", policy.Name)
+		if err := r.Patch(ctx, policy, client.Apply, client.ForceOwnership, client.FieldOwner(SpectrumXRailPoolConfigControllerName)); err != nil {
+			return fmt.Errorf("error while patching %s %s: %w", policy.GetObjectKind().GroupVersionKind().String(), client.ObjectKeyFromObject(policy), err)
+		}
 	}
 
 	// Secondary policy: remaining PFs with 1 VF each; resource name suffixed with -unused so the
@@ -357,6 +374,8 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 	// That's a temporary solution until SR-IOV Operator and Device plugin can't support empty resource name
 	// to proceed a configuration without exposing resources to users.
 	if len(remainingPFs) > 0 {
+		// NOTE: unlike the primary policy, no user-ownership check is done here. We assume nobody
+		// creates a SriovNetworkNodePolicy with the "-unused" suffix, so it is safe to force-apply.
 		log.V(1).Info("generating secondary SriovNetworkNodePolicy for remaining PFs", "railTopology", rt.Name, "pfs", remainingPFs)
 		secondaryPolicy := r.generateSRIOVNetworkNodePolicy(ctx, spec, &rt, rt.Name+unusedPolicySuffix, rt.Name+unusedPolicySuffix, remainingPFs, 1, true, namespace)
 		secondaryPolicy.Labels = ownerLabels
@@ -728,10 +747,18 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) deleteRailTopologyResources
 	log := log.FromContext(ctx)
 	log.V(1).Info("deleteRailTopologyResources started", "namespace", namespace, "railTopology", rtName)
 
-	policy := &sriovv1.SriovNetworkNodePolicy{ObjectMeta: metav1.ObjectMeta{Name: rtName, Namespace: namespace}}
-	log.V(1).Info("deleting primary SriovNetworkNodePolicy", "name", rtName)
-	if err := r.Delete(ctx, policy); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to delete SriovNetworkNodePolicy %s/%s: %w", namespace, rtName, err)
+	// Never delete a same-named policy that is not managed by this controller (user-defined).
+	policy, err := r.getControllerOwnedPolicy(ctx, rtName, namespace)
+	switch {
+	case apierrors.IsNotFound(err):
+		// nothing to delete
+	case err != nil:
+		log.Info("skipping deletion of primary SriovNetworkNodePolicy", "name", rtName, "reason", err.Error())
+	default:
+		log.V(1).Info("deleting primary SriovNetworkNodePolicy", "name", rtName)
+		if err := r.Delete(ctx, policy, client.Preconditions{UID: &policy.UID}); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete SriovNetworkNodePolicy %s/%s: %w", namespace, rtName, err)
+		}
 	}
 
 	secondaryPolicy := &sriovv1.SriovNetworkNodePolicy{ObjectMeta: metav1.ObjectMeta{Name: rtName + unusedPolicySuffix, Namespace: namespace}}
@@ -974,6 +1001,26 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkPoolCon
 
 	log.FromContext(ctx).V(1).Info("generated SriovNetworkPoolConfig", "object", nodePool)
 	return nodePool
+}
+
+// getControllerOwnedPolicy returns the SriovNetworkNodePolicy with the given name.
+// If the policy does not exist, the returned error satisfies apierrors.IsNotFound.
+// It returns another error if the policy exists but is not managed by SpectrumXRailPoolConfigControllerName.
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) getControllerOwnedPolicy(ctx context.Context, name, namespace string) (*sriovv1.SriovNetworkNodePolicy, error) {
+	existing := &sriovv1.SriovNetworkNodePolicy{}
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to get SriovNetworkNodePolicy %s/%s: %w", namespace, name, err)
+	}
+	for _, mf := range existing.GetManagedFields() {
+		if mf.Manager == SpectrumXRailPoolConfigControllerName {
+			return existing, nil
+		}
+	}
+	return nil, fmt.Errorf("SriovNetworkNodePolicy %s/%s already exists and is not owned by %s; refusing to override user-defined policy",
+		namespace, name, SpectrumXRailPoolConfigControllerName)
 }
 
 func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateSRIOVNetworkNodePolicy(
