@@ -1,6 +1,6 @@
 module github.com/Mellanox/spectrum-x-operator
 
-go 1.26.0
+go 1.26.3
 
 require (
 	github.com/caarlos0/env/v11 v11.4.2
@@ -21,10 +21,24 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/nikolalohinski/gonja/v2 v2.8.0 // indirect
+	github.com/openconfig/goyang v1.6.0 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
+	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
+	nvidia.com/doca/dms/doSpcx v0.0.0-20261110131521-481261de68cd // indirect
+)
+
+require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
+	github.com/Mellanox/dms-lib v0.0.0-20261117123118-4f00c0b5b6f9
+	github.com/Mellanox/dms-lib/api v0.0.0-20261117123118-4f00c0b5b6f9
 	github.com/Mellanox/sriovnet v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
@@ -108,7 +122,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
@@ -121,14 +135,20 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9 // indirect
-	k8s.io/apiextensions-apiserver v0.34.3 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
+	k8s.io/apiextensions-apiserver v0.34.3
+	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
-	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
+	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
+	sigs.k8s.io/yaml v1.6.0
 )
 
 replace github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
+
+replace github.com/Mellanox/dms-lib => dms-lib-repository.invalid/dms-blueprints-lib.git/lib v0.0.0-20261117123118-4f00c0b5b6f9
+
+replace github.com/Mellanox/dms-lib/api => dms-lib-repository.invalid/dms-blueprints-lib.git/lib/api v0.0.0-20261117123118-4f00c0b5b6f9
+
+replace nvidia.com/doca/dms/doSpcx => dms-lib-repository.invalid/dms-blueprints-lib.git/doSpcx v0.0.0-20261117123118-4f00c0b5b6f9

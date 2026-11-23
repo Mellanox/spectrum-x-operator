@@ -23,6 +23,8 @@ import (
 	"os"
 	"time"
 
+	dmsv1 "github.com/Mellanox/dms-lib/api/v1alpha1"
+
 	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/internal/controller"
 	"github.com/Mellanox/spectrum-x-operator/internal/staleflows"
@@ -60,6 +62,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(spectrumxv1alpha2.AddToScheme(scheme))
 	utilruntime.Must(sriovv1.AddToScheme(scheme))
+	utilruntime.Must(dmsv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -158,6 +161,11 @@ func main() {
 	}
 
 	execAPI := &exec.Exec{}
+	planReconciler := controller.NewDMSPlanParamsReconciler(mgr.GetClient(), mgr.GetAPIReader(), Options.NodeName)
+	if err = planReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DMSPlanParams")
+		os.Exit(1)
+	}
 	flowsAPI := &controller.Flows{Exec: execAPI}
 
 	if err = (&controller.FlowReconciler{
