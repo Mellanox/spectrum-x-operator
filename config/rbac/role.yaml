@@ -7,20 +7,21 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
   - get
   - patch
   - update
-- apiGroups:
-  - ""
-  resources:
-  - nodes
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - ""
   resources:
@@ -69,6 +70,22 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - dms.nvidia.com
+  resources:
+  - dmsplanparams
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - dms.nvidia.com
+  resources:
+  - dmsplanparams/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - nv-ipam.nvidia.com
   resources:

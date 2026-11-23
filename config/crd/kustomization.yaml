@@ -2,8 +2,8 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/dms.nvidia.com_dmsplanparams.yaml
 - bases/spectrumx.nvidia.com_spectrumxrailpoolconfigs.yaml
+- bases/dms.nvidia.com_dmsplanparams.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -19,4 +19,9 @@ and retries reconciliation.
 
 Network Operator Documentation can be found [here](https://docs.nvidia.com/networking/software/cloud-orchestration/index.html)
 
+See [DMS host plan bindings](docs/dms-plan-params.md) for structured blueprint
+ConfigMaps and per-host DMSPlanParams status.
+See [plan-sourced xplane configuration](docs/xplane-plan-configuration.md) for
+delivering the selected service artifact through the existing xplane DaemonSet.
+
 > __NOTE__: This project is currently under active development and should be considered Tech Preview only.

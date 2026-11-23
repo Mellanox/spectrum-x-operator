@@ -56,9 +56,9 @@ type RailTopology struct {
 }
 
 // SpectrumXRailPoolConfigSpec defines the desired state of SpectrumXRailPoolConfig.
-// +kubebuilder:validation:XValidation:rule="!has(self.dmsPlanParamsRef) || size(self.dmsPlanParamsRef) == 0",message="dmsPlanParamsRef requires DMS library integration"
 type SpectrumXRailPoolConfigSpec struct {
-	// DMSPlanParamsRef selects same-namespace DMS plan parameters; enabled with the library integration.
+	// DMSPlanParamsRef selects the same-namespace DMS plan supplying xplane configuration.
+	// When omitted, xplane retains its existing OVS-based configuration.
 	// +optional
 	DMSPlanParamsRef string `json:"dmsPlanParamsRef,omitempty"`
 	// +kubebuilder:default:=true
