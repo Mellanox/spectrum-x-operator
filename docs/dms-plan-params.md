@@ -87,11 +87,17 @@ GitLab `dms-blueprints-lib.git/lib`, `lib/api` and `doSpcx` modules, all pinned 
 packages; configuration execution uses the installed `dms-cli`. No additional
 planner binary is packaged.
 
-Dependency download and image builds need GitLab network and repository read
-access; this change does not grant credentials or alter library visibility. The Dockerfile accepts an optional BuildKit secret named `netrc`
-for its existing dependency-download step, for example
-`--secret id=netrc,src=/path/to/authorized.netrc`. The secret is not copied into
-the image. Hosted CI without repository access cannot fetch the dependency.
+Set the GitLab project's CI/CD variable `DMS_LIB_REPOSITORY` to the private
+Git repository path in `host/group/project.git` form. The STIG build jobs
+substitute it into the Go module and checksum files in the job checkout.
+The existing `GITLAB_USERNAME` and `GITLAB_TOKEN` need read access to that
+repository. BuildKit receives those credentials through the `netrc` secret.
+
+For a local build, set the same variable and run
+`sh hack/resolve-dms-lib-repository.sh` in a disposable checkout before running
+Go or Docker. Set `GOPRIVATE` to the repository host for Go, or pass
+`--build-arg GOPRIVATE` and `--secret id=netrc,src=/path/to/netrc` to Docker.
+The repository placeholder belongs in the committed files.
 
 Controller envtests exercise real Kubernetes status updates, concurrent host
 publication, stale inputs, node replacement, discovery failures, parameter

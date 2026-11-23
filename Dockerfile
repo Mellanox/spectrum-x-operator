@@ -22,7 +22,8 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG GCFLAGS
 ARG GOPROXY
-ENV GOPROXY=$GOPROXY
+ARG GOPRIVATE
+ENV GOPROXY=$GOPROXY GOPRIVATE=$GOPRIVATE
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -32,7 +33,7 @@ COPY go.sum go.sum
 # and so that source changes don't invalidate our downloaded layer
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=secret,id=netrc,target=/root/.netrc \
-    GOPRIVATE=gitlab-master.nvidia.com go mod download
+    go mod download
 
 # Copy the go source
 COPY ./ ./

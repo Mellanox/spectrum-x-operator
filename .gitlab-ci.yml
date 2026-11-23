@@ -99,6 +99,13 @@ variables: # additional variables defined at the gitlab group scope
           exit 1
         fi
       done
+    # Resolve the private module location in this job's build context.
+    - |
+      sh hack/resolve-dms-lib-repository.sh
+      export GOPRIVATE="${DMS_LIB_REPOSITORY%%/*}"
+      dms_netrc=$(mktemp)
+      trap 'rm -f "$dms_netrc"' EXIT
+      printf 'machine %s login %s password %s\n' "$GOPRIVATE" "$GITLAB_USERNAME" "$GITLAB_TOKEN" > "$dms_netrc"
     # docker authentication
     - echo $ARTIFACTORY_TOKEN | docker login $ARTIFACTORY_REGISTRY -u $ARTIFACTORY_USERNAME --password-stdin
     - echo $NVCR_TOKEN        | docker login $DOCKER_REGISTRY      -u $NVCR_USERNAME        --password-stdin
@@ -146,6 +153,8 @@ build-operator-stig-image:
     - |
       docker build \
         --secret id=stig_script,src=/tmp/stig-scripts/stig-fixer.sh \
+        --secret id=netrc,src="$dms_netrc" \
+        --build-arg GOPRIVATE \
         --build-arg GOPROXY=$GOPROXY \
         --build-arg UBUNTU_STIG_BASE_IMAGE=$UBUNTU_STIG_BASE_IMAGE \
         --file      Dockerfile.stig-ubuntu \
@@ -161,6 +170,8 @@ build-operator-stig-image:
       docker build \
         --secret id=rh_username,src=/tmp/rh_username \
         --secret id=rh_password,src=/tmp/rh_password \
+        --secret id=netrc,src="$dms_netrc" \
+        --build-arg GOPRIVATE \
         --build-arg GOPROXY=$GOPROXY \
         --build-arg RHEL_STIG_BASE_IMAGE=$RHEL_STIG_BASE_IMAGE \
         --build-arg CVE_UPDATES_RHEL="$CVE_UPDATES_RHEL" \

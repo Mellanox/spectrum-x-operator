@@ -147,8 +147,8 @@ require (
 
 replace github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
 
-replace github.com/Mellanox/dms-lib => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib v0.0.0-20261117123118-4f00c0b5b6f9
+replace github.com/Mellanox/dms-lib => dms-lib-repository.invalid/dms-blueprints-lib.git/lib v0.0.0-20261117123118-4f00c0b5b6f9
 
-replace github.com/Mellanox/dms-lib/api => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/lib/api v0.0.0-20261117123118-4f00c0b5b6f9
+replace github.com/Mellanox/dms-lib/api => dms-lib-repository.invalid/dms-blueprints-lib.git/lib/api v0.0.0-20261117123118-4f00c0b5b6f9
 
-replace nvidia.com/doca/dms/doSpcx => gitlab-master.nvidia.com/cloud-orchestration/dms-blueprints-lib.git/doSpcx v0.0.0-20261117123118-4f00c0b5b6f9
+replace nvidia.com/doca/dms/doSpcx => dms-lib-repository.invalid/dms-blueprints-lib.git/doSpcx v0.0.0-20261117123118-4f00c0b5b6f9
