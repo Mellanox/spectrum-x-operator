@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	spectrumxv1alpha2 "github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
+	dmsv1alpha1 "github.com/Mellanox/dms-lib/api/v1alpha1"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -85,6 +86,7 @@ var _ = BeforeSuite(func() {
 		corev1.AddToScheme,
 		spectrumxv1alpha2.AddToScheme,
 		sriovv1.AddToScheme,
+		dmsv1alpha1.AddToScheme,
 	}
 
 	for _, schemeAdder := range schemeAdders {

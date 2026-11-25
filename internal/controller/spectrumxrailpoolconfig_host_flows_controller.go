@@ -53,6 +53,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	dmsv1alpha1 "github.com/Mellanox/dms-lib/api/v1alpha1"
 	"github.com/Mellanox/spectrum-x-operator/api/v1alpha2"
 	"github.com/Mellanox/spectrum-x-operator/internal/ovssafestart"
 	"github.com/Mellanox/spectrum-x-operator/pkg/config"
@@ -152,6 +153,7 @@ func NewSpectrumXRailPoolConfigHostFlowsReconciler(
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=nv-ipam.nvidia.com,resources=cidrpools,verbs=get;list;watch
+// +kubebuilder:rbac:groups=dms.nvidia.com,resources=dmsplanparams,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -330,6 +332,11 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		return fmt.Errorf("no PF names are specified in rail topology")
 	}
 
+	xgsEnabled, err := r.isXGSEnabled(ctx, rpc)
+	if err != nil {
+		return err
+	}
+
 	isMultiplane := len(rt.NicSelector.PfNames) > 1
 	firstPF := rt.NicSelector.PfNames[0]
 	remainingPFs := rt.NicSelector.PfNames[1:]
@@ -381,7 +388,7 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) reconcileRailTopology(ctx c
 		}
 	}
 
-	ovsNetwork := r.generateOVSNetwork(ctx, spec, &rt, addBridge, addVRF, namespace)
+	ovsNetwork := r.generateOVSNetwork(ctx, spec, &rt, addBridge, addVRF, xgsEnabled, namespace)
 	ovsNetwork.SetGroupVersionKind(sriovv1.GroupVersion.WithKind(sriovOVSNetworkType))
 	ovsNetwork.Labels = ownerLabels
 	log.V(1).Info("patching OVSNetwork", "name", ovsNetwork.Name, "addBridge", addBridge)
@@ -1090,7 +1097,22 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) isCidrPoolIPv6(ctx context.
 	return ip.To4() == nil, nil
 }
 
-func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, addVRF bool, namespace string) *sriovv1.OVSNetwork {
+// isXGSEnabled reports whether XGS mode is enabled for the pool config. XGS is
+// enabled when the DMSPlanParams referenced by spec.dmsPlanParamsRef (same
+// namespace) has spec.spxgs set to true. Without a reference XGS is disabled.
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) isXGSEnabled(ctx context.Context, rpc *v1alpha2.SpectrumXRailPoolConfig) (bool, error) {
+	if rpc.Spec.DMSPlanParamsRef == "" {
+		return false, nil
+	}
+	dmsPlanParams := &dmsv1alpha1.DMSPlanParams{}
+	key := types.NamespacedName{Name: rpc.Spec.DMSPlanParamsRef, Namespace: rpc.Namespace}
+	if err := r.Get(ctx, key, dmsPlanParams); err != nil {
+		return false, fmt.Errorf("failed to get DMSPlanParams %s: %w", key, err)
+	}
+	return dmsPlanParams.Spec.SPXGS != nil && *dmsPlanParams.Spec.SPXGS, nil
+}
+
+func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(ctx context.Context, spec *v1alpha2.SpectrumXRailPoolConfigSpec, rt *v1alpha2.RailTopology, addBridge bool, addVRF bool, xgsEnabled bool, namespace string) *sriovv1.OVSNetwork {
 	var ipam string
 	switch {
 	case rt.IPAM != "":
@@ -1101,7 +1123,12 @@ func (r *SpectrumXRailPoolConfigHostFlowsReconciler) generateOVSNetwork(ctx cont
 
 	rdmDeviceName := fmt.Sprintf("rdma_%s", rt.Name)
 
-	metaPlugins := fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {"tos": %d,"tc": %d}, "args": {"cni": {"rdmaDeviceName": "%s"}}}`, rdmaQoSToS, rdmaQoSTC, rdmDeviceName)
+	// In XGS mode the rdma "tc" field is not set.
+	rdmaQoS := fmt.Sprintf(`"tos": %d,"tc": %d`, rdmaQoSToS, rdmaQoSTC)
+	if xgsEnabled {
+		rdmaQoS = fmt.Sprintf(`"tos": %d`, rdmaQoSToS)
+	}
+	metaPlugins := fmt.Sprintf(`{"type": "rdma", "rdmaQoS": {%s}, "args": {"cni": {"rdmaDeviceName": "%s"}}}`, rdmaQoS, rdmDeviceName)
 	if addVRF {
 		metaPlugins += fmt.Sprintf(`, {"type": "vrf", "vrfname": %q}`, rt.Name)
 	}

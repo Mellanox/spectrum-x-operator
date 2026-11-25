@@ -32,6 +32,7 @@ import (
 	netlinklib "github.com/Mellanox/spectrum-x-operator/pkg/lib/netlink"
 
 	env "github.com/caarlos0/env/v11"
+	dmsv1alpha1 "github.com/Mellanox/dms-lib/api/v1alpha1"
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	sriovhost "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	corev1 "k8s.io/api/core/v1"
@@ -60,6 +61,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(spectrumxv1alpha2.AddToScheme(scheme))
 	utilruntime.Must(sriovv1.AddToScheme(scheme))
+	utilruntime.Must(dmsv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
