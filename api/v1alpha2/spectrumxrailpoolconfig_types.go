@@ -81,6 +81,12 @@ type SpectrumXRailPoolConfigSpec struct {
 	// option override its value; all other keys are added as-is.
 	// +optional
 	OvsConfig map[string]string `json:"ovsConfig,omitempty"`
+	// DMSPlanParamsRef is the name of a DMSPlanParams resource (dms.nvidia.com)
+	// in the same namespace as this SpectrumXRailPoolConfig. When the referenced
+	// resource has spec.spxgs set to true, XGS mode is enabled: the generated
+	// OVSNetwork does not set the "tc" field in the rdma meta plugin rdmaQoS config.
+	// +optional
+	DMSPlanParamsRef string `json:"dmsPlanParamsRef,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// Number of VFs for each PF
 	NumVfs int `json:"numVfs"`

@@ -25,6 +25,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
+	github.com/Mellanox/dms-lib/api v0.0.0-20261123084337-79e474e6d794
 	github.com/Mellanox/sriovnet v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
@@ -132,3 +133,5 @@ require (
 )
 
 replace github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/Mellanox/sriov-network-operator v0.0.0-20260218142826-52856c47c59d
+
+replace github.com/Mellanox/dms-lib/api => github.com/Mellanox/dms-lib/lib/api v0.0.0-20261112085227-19389524193e

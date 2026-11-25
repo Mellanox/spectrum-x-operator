@@ -78,6 +78,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - dms.nvidia.com
+  resources:
+  - dmsplanparams
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - spectrumx.nvidia.com
   resources:
   - spectrumxrailpoolconfigs

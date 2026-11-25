@@ -19,3 +19,11 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - dms.nvidia.com
+    resources:
+      - dmsplanparams
+    verbs:
+      - get
+      - list
+      - watch
